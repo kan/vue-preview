@@ -77,6 +77,7 @@ docker compose exec app npx vite --host 0.0.0.0       # 比較用: http://localh
   - push（main）と PR: `unit`（単体テスト）と `e2e`（ビルド → `npm ci` → e2e）を実行します。成果物として `out/` とバイナリをアップロードします。
   - `v*` タグの push: 上記が通ったら、`vue-preview-linux-x64` と `.sha256` を GitHub Release に添付します。`-` を含むタグ（例: `v0.2.0-rc.1`）は prerelease になります。
 - リリース手順: `git tag v0.1.0 && git push origin v0.1.0`。バイナリの `--version` にはタグ名が埋め込まれます。
+  - タグを push できない環境（Claude Code on the web のセッションなど）では、CI を `workflow_dispatch` で実行し、`release_tag` に `v0.1.0` を指定します。テストが通ると、実行したコミットにタグが作られ、リリースが公開されます。
 
 ## 作業ルール
 
