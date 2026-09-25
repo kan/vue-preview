@@ -1,0 +1,8 @@
+{
+  "rows": [
+    { "id": 1, "name": "山田 太郎", "email": "taro@example.com", "role": "管理者", "status": "active" },
+    { "id": 2, "name": "佐藤 花子", "email": "hanako@example.com", "role": "編集者", "status": "invited" },
+    { "id": 3, "name": "鈴木 一郎", "email": "ichiro@example.com", "role": "閲覧者", "status": "suspended" },
+    { "id": 4, "name": "高橋 次郎", "email": "jiro@example.com", "role": "編集者", "status": "active" }
+  ]
+}

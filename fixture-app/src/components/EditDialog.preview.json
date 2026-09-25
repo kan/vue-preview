@@ -1,0 +1,5 @@
+{
+  "visible": true,
+  "draftName": "山田 太郎",
+  "user": { "id": 1, "name": "山田 太郎", "email": "taro@example.com", "role": "管理者", "status": "active" }
+}

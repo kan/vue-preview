@@ -1,0 +1,7 @@
+{
+  "aliases": { "@": "src" },
+  "globalCss": ["src/styles/main.css"],
+  "tailwind": { "entry": "src/styles/main.css" },
+  "primevue": { "unstyled": true, "pt": "src/pt/preset.ts" },
+  "componentDirs": []
+}
