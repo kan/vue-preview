@@ -115,6 +115,8 @@ async function main() {
   });
   const rootDef = await graph.build(entry, [], fixture);
   lap('compile', t);
+  timings['compile.sfc'] = Math.round(graph.time.sfcCompile * 10) / 10;
+  timings['compile.packageImport'] = Math.round(graph.time.packageImport * 10) / 10;
 
   // --- SSR -------------------------------------------------------------------
   t = performance.now();
@@ -138,6 +140,13 @@ async function main() {
   }
   const ctx: any = {};
   const body = await ssr.renderToString(app, ctx);
+  lap('ssr.firstRender', t);
+  if (process.env.VUE_PREVIEW_BENCH_SSR) {
+    // second render of the same app shape: JIT-warm SSR cost (resident-mode estimate)
+    const t2 = performance.now();
+    await ssr.renderToString(vue.createSSRApp(rootDef).use(primevue ?? (() => {}), { unstyled: true, pt }), {});
+    lap('ssr.secondRender', t2);
+  }
   const teleports = Object.entries<string>(ctx.teleports ?? {})
     .map(([to, html]) => `<!-- teleport:${to} -->${html}`)
     .join('\n');

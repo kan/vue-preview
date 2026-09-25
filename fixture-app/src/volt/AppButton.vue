@@ -18,7 +18,7 @@ const theme = {
   <Button
     unstyled
     :pt="theme"
-    :pt-options="{ mergeProps: true }"
+    :pt-options="{ mergeSections: true, mergeProps: false }"
     :class="severity === 'secondary' ? 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100' : 'bg-brand-500 text-white hover:bg-brand-600'"
   >
     <template v-for="(_, slotName) in $slots" #[slotName]="slotProps">

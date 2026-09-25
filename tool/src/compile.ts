@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ProjectModules } from './load-project-modules';
+import { isPlaceholder } from './placeholder';
 
 export const UNKNOWN = Symbol('unknown');
 
@@ -121,7 +122,7 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
     for (const e of result.errors) warnings.push(`${rel}: template: ${typeof e === 'string' ? e : e.message}`);
     collectComponents(result.ast, templateComponents);
     // Function-mode output: `const { ... } = Vue; return function render(...)`
-    render = new Function('Vue', result.code)(mods.vue);
+    render = new Function('Vue', result.code)(renderHelpers(mods.vue));
   }
 
   const styles: CompiledSfc['styles'] = [];
@@ -158,6 +159,79 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
     styles,
     warnings,
   };
+}
+
+// Placeholders are callable Proxies (typeof 'function'). Vue treats functions
+// specially in two places that matter for templates, so the helpers handed to
+// *our* render functions are shimmed (library components are untouched):
+//  - renderList() only iterates arrays/strings/numbers/objects -> spread it
+//  - SSR drops function-valued attributes -> stringify on plain elements
+let helperCache: WeakMap<object, any> = new WeakMap();
+function renderHelpers(vue: any) {
+  if (helperCache.has(vue)) return helperCache.get(vue);
+  const fixProps = (type: unknown, props: any) => {
+    if (!props) return props;
+    if (typeof type !== 'string') return coerceComponentProps(type, props);
+    let out = props;
+    for (const k in props) {
+      if (k === 'class' || k === 'style' || /^on[A-Z]/.test(k) || !isPlaceholder(props[k])) continue;
+      if (out === props) out = { ...props };
+      out[k] = String(props[k]);
+    }
+    return out;
+  };
+  const wrapped = {
+    ...vue,
+    renderList: (src: any, fn: any, cache?: any, index?: number) => vue.renderList(isPlaceholder(src) ? [...src] : src, fn, cache, index),
+    createElementVNode: (type: any, props: any, ...rest: any[]) => vue.createElementVNode(type, fixProps(type, props), ...rest),
+    createElementBlock: (type: any, props: any, ...rest: any[]) => vue.createElementBlock(type, fixProps(type, props), ...rest),
+    createVNode: (type: any, props: any, ...rest: any[]) => vue.createVNode(type, fixProps(type, props), ...rest),
+    createBlock: (type: any, props: any, ...rest: any[]) => vue.createBlock(type, fixProps(type, props), ...rest),
+  };
+  helperCache.set(vue, wrapped);
+  return wrapped;
+}
+
+/** Declared prop types of a component, following `extends` / `mixins` (PrimeVue uses BaseXxx). */
+function declaredPropTypes(comp: any, out: Record<string, Function[]> = {}, depth = 0): Record<string, Function[]> {
+  if (!comp || typeof comp !== 'object' || depth > 10) return out;
+  declaredPropTypes(comp.extends, out, depth + 1);
+  for (const m of comp.mixins ?? []) declaredPropTypes(m, out, depth + 1);
+  const props = comp.props;
+  if (props && !Array.isArray(props)) {
+    for (const [k, v] of Object.entries<any>(props)) {
+      const t = v && typeof v === 'object' && !Array.isArray(v) ? v.type : v;
+      out[k] = (Array.isArray(t) ? t : [t]).filter((x) => typeof x === 'function');
+    }
+  }
+  return out;
+}
+
+const propTypeCache = new WeakMap<object, Record<string, Function[]>>();
+const camelize = (s: string) => s.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+
+/** Placeholders handed to (library) components are coerced to the declared prop type. */
+function coerceComponentProps(type: any, props: any) {
+  if (!type || typeof type !== 'object' || type.__vpOwn) return props;
+  let types = propTypeCache.get(type);
+  if (!types) propTypeCache.set(type, (types = declaredPropTypes(type)));
+  let out = props;
+  for (const k in props) {
+    const v = props[k];
+    if (!isPlaceholder(v)) continue;
+    const t = types[camelize(k)];
+    if (!t || t.length === 0 || t.includes(Function) || t.includes(Object)) continue;
+    let nv: unknown = v;
+    if (t.includes(Array)) nv = [...v];
+    else if (t.includes(String)) nv = String(v);
+    else if (t.includes(Number)) nv = 1;
+    else if (t.includes(Boolean)) nv = true;
+    if (nv !== v) {
+      if (out === props) out = { ...props };
+      out[k] = nv;
+    }
+  }
+  return out;
 }
 
 function collectComponents(node: any, out: Set<string>) {

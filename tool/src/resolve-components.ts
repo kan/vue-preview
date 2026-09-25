@@ -22,6 +22,7 @@ export class ComponentGraph {
   readonly compiled = new Map<string, CompiledSfc>();
   readonly warnings: string[] = [];
   readonly deps = new Set<string>();
+  readonly time = { sfcCompile: 0, packageImport: 0 };
   private defs = new Map<string, any>();
 
   constructor(
@@ -71,7 +72,9 @@ export class ComponentGraph {
 
     let sfc = this.compiled.get(file);
     if (!sfc) {
+      const t = performance.now();
       sfc = compileSfc(this.mods, file);
+      this.time.sfcCompile += performance.now() - t;
       this.compiled.set(file, sfc);
       this.deps.add(rel);
       sfc.warnings.forEach((w) => this.warn(w));
@@ -97,6 +100,7 @@ export class ComponentGraph {
     const def: any = {
       name: sfc.name,
       __file: sfc.rel,
+      __vpOwn: true, // our own SFC: placeholders are resolved by its ctx proxy
       __scopeId: sfc.scoped ? `data-v-${sfc.id}` : undefined,
       props: Object.fromEntries(
         Object.entries(sfc.props).map(([k, p]) => [k, { type: p.types.map((t) => PROP_TYPES[t]).filter(Boolean) as any[] }]),
@@ -132,7 +136,9 @@ export class ComponentGraph {
     }
     // package import: load the real thing
     try {
+      const t = performance.now();
       const mod = await this.mods.importFrom(spec, fromFile);
+      this.time.packageImport += performance.now() - t;
       if (imported === '*') return mod;
       if (imported === 'default') return mod.default ?? mod;
       return mod[imported];
