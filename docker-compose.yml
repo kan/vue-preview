@@ -14,6 +14,7 @@ services:
     volumes:
       - ./tool:/tool
       - ./dist:/dist
+      - ./out:/out
     profiles: [build]
 volumes:
   app_node_modules:

@@ -7,41 +7,12 @@ import { loadProjectModules } from './load-project-modules';
 import { ComponentGraph } from './resolve-components';
 import { buildTailwind, inlineUrls, resolveCssEntry } from './css';
 import { buildHtml } from './html';
+import { loadConfig, readJson, resolveAliases } from './config';
 
-interface Config {
-  aliases?: Record<string, string>;
-  globalCss?: string[];
-  tailwind?: { entry: string } | null;
-  primevue?: { unstyled?: boolean; pt?: string; portal?: 'teleport' | 'inline' | 'off' } | null;
-  componentDirs?: string[];
-  placeholderIterations?: number;
-  maxDepth?: number;
-}
+declare const VUE_PREVIEW_VERSION: string;
+const VERSION = typeof VUE_PREVIEW_VERSION === 'string' ? VUE_PREVIEW_VERSION : 'dev';
 
-const USAGE = 'usage: vue-preview render <path> --root <dir> [--fixture <file>] [--json] [--out <file>] [--portal teleport|inline|off]';
-
-function readJson(file: string) {
-  // tsconfig allows comments / trailing commas
-  const text = fs.readFileSync(file, 'utf8');
-  try {
-    return JSON.parse(text);
-  } catch {
-    return new Function(`return (${text})`)();
-  }
-}
-
-function aliasesFromTsconfig(root: string): Record<string, string> {
-  const file = path.join(root, 'tsconfig.json');
-  if (!fs.existsSync(file)) return {};
-  const tsconfig = readJson(file);
-  const base = path.resolve(root, tsconfig.compilerOptions?.baseUrl ?? '.');
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries<string[]>(tsconfig.compilerOptions?.paths ?? {})) {
-    if (!k.endsWith('/*') || !v[0]?.endsWith('/*')) continue;
-    out[k.slice(0, -2)] = path.resolve(base, v[0].slice(0, -2));
-  }
-  return out;
-}
+const USAGE = 'usage: vue-preview --version | vue-preview render <path> --root <dir> [--fixture <file>] [--json] [--out <file>] [--portal teleport|inline|off]';
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -54,8 +25,13 @@ async function main() {
       out: { type: 'string' },
       portal: { type: 'string' },
       timings: { type: 'boolean', default: false },
+      version: { type: 'boolean', short: 'v', default: false },
     },
   });
+  if (values.version) {
+    console.log(VERSION);
+    return;
+  }
   const [cmd, target] = positionals;
   if (cmd !== 'render' || !target) {
     console.error(USAGE);
@@ -66,17 +42,14 @@ async function main() {
   const lap = (name: string, since: number) => (timings[name] = Math.round((performance.now() - since) * 10) / 10);
 
   const root = path.resolve(values.root ?? process.cwd());
-  const configFile = path.join(root, 'vue-preview.config.json');
-  const config: Config = fs.existsSync(configFile) ? readJson(configFile) : {};
+  const { config, file: configFile } = loadConfig(root);
   const warnings: string[] = [];
   const warn = (m: string) => void (warnings.includes(m) || warnings.push(m));
   const deps = new Set<string>();
   const addDep = (abs: string) => deps.add(path.relative(root, abs));
-  if (fs.existsSync(configFile)) addDep(configFile);
+  if (configFile) addDep(configFile);
 
-  const aliases = config.aliases
-    ? Object.fromEntries(Object.entries(config.aliases).map(([k, v]) => [k, path.resolve(root, v)]))
-    : aliasesFromTsconfig(root);
+  const aliases = resolveAliases(root, config);
 
   // --- module loading --------------------------------------------------------
   let t = performance.now();

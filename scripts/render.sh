@@ -1,9 +1,11 @@
 #!/bin/sh
-# Render a component inside the app container: ./render.sh src/components/UserPage.vue [extra args]
-set -e
-cd "$(dirname "$0")"
+# Render a component inside the app container and summarise the result:
+#   scripts/render.sh src/components/UserPage.vue [extra args]
+# Writes out/<Name>.json and out/<Name>.html.
+set -eu
+cd "$(dirname "$0")/.."
 name=$(basename "$1" .vue)
-docker compose exec app /opt/vue-preview/vue-preview render "$@" --root /app --json --out "/out/$name.json"
+docker compose exec -T app /opt/vue-preview/vue-preview render "$@" --root /app --json --out "/out/$name.json"
 python3 - "out/$name.json" "out/$name.html" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))

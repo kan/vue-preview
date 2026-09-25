@@ -36,9 +36,9 @@
 ```sh
 docker compose up -d app
 docker compose exec app npm install          # node_modules は named volume の中だけ
-./build.sh                                   # = docker compose run --rm bun bun build src/cli.ts --compile --compile-autoload-package-json ...
+scripts/build.sh                                   # = docker compose run --rm bun bun build src/cli.ts --compile --compile-autoload-package-json ...
 docker compose exec app /opt/vue-preview/vue-preview render src/components/UserPage.vue --root /app --json > out/UserPage.json
-./render.sh src/components/UserPage.vue      # 補助: JSON と HTML を out/ に書き出し、warnings/deps/timings を表示
+scripts/render.sh src/components/UserPage.vue      # 補助: JSON と HTML を out/ に書き出し、warnings/deps/timings を表示
 ```
 
 - AGENTS.md 記載の `docker-compose.yml` をそのまま使っています。検証サンドボックスではコンテナの外部通信にホストのプロキシが必要だったため、`docker-compose.override.yml`（git 管理外）で `network_mode: host`、`HTTPS_PROXY`、CA を追加しました。通常の環境ではこのファイルは不要です。
@@ -316,4 +316,4 @@ Vite 側の比較ページ（`compare.html`）は fixture の値を props とし
   - `edge/`: プレースホルダ、循環参照、未解決コンポーネントの検証用
 - `fixture-app/src/compare.ts` / `compare.html`: V6 の比較用エントリ
 - `report-assets/`: スクリーンショット
-- `build.sh` / `render.sh`: ビルドと実行の補助スクリプト
+- `scripts/*.sh`: ビルドと実行の補助スクリプト
