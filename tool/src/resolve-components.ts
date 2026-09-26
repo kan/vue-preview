@@ -1,6 +1,7 @@
 // V3: recursive resolution of child components.
 import fs from 'node:fs';
 import path from 'node:path';
+import { firstFile, projectPath } from './config';
 import type { ProjectModules } from './load-project-modules';
 import { compileSfc, type CompiledSfc } from './compile';
 import { createCtxProxy } from './ctx-proxy';
@@ -55,14 +56,6 @@ export class ComponentGraph {
     };
   }
 
-  /** Map an import specifier to an absolute path if it points into the project. */
-  private projectPath(spec: string, fromFile: string): string | null {
-    if (spec.startsWith('./') || spec.startsWith('../')) return path.resolve(path.dirname(fromFile), spec);
-    for (const [alias, dir] of Object.entries(this.opts.aliases)) {
-      if (spec === alias || spec.startsWith(alias + '/')) return path.join(dir, spec.slice(alias.length));
-    }
-    return null;
-  }
 
   async build(file: string, stack: string[] = [], fixture: Record<string, unknown> | null = null): Promise<any> {
     if (!fixture && this.defs.has(file)) return this.defs.get(file);
@@ -119,7 +112,7 @@ export class ComponentGraph {
   }
 
   private async resolveImport(local: string, spec: string, imported: string, fromFile: string, stack: string[]) {
-    const projectFile = this.projectPath(spec, fromFile);
+    const projectFile = projectPath(spec, fromFile, this.opts.aliases);
     if (projectFile) {
       const target = this.findFile(projectFile);
       if (!target) return this.stub(local, `cannot resolve '${spec}' from ${this.mods.rel(fromFile)}`);
@@ -150,8 +143,7 @@ export class ComponentGraph {
   }
 
   private findFile(p: string): string | null {
-    const candidates = [p, `${p}.vue`, `${p}.ts`, `${p}.js`, path.join(p, 'index.vue'), path.join(p, 'index.ts'), path.join(p, 'index.js')];
-    return candidates.find((c) => fs.existsSync(c) && fs.statSync(c).isFile()) ?? null;
+    return firstFile([p, `${p}.vue`, `${p}.ts`, `${p}.js`, path.join(p, 'index.vue'), path.join(p, 'index.ts'), path.join(p, 'index.js')]);
   }
 
   private async resolveGlobalTag(tag: string, fromFile: string, stack: string[]) {

@@ -22,6 +22,7 @@
 | V5 CSS インライン化 | **成立** | scoped / global / Tailwind v4（oxide ネイティブも可）/ primeicons の data URI 化 |
 | V6 出力とパフォーマンス | **成立** | 外部リクエスト 0 件。Vite との画素差分は 0〜0.04%。1 回あたり約 0.6〜1.0 秒 |
 | V7 node_modules が無いときの依存キャッシュ | **成立** | ロックファイルから埋め込みの bun で入れ、`NODE_PATH` 付きで起動し直す。Windows 版でも描けた |
+| V8 設定ファイルが無いプロジェクト | **成立** | 書かれていないキーをエントリ（`src/main.ts`）の静的な読み取りで補う。PrimeVue を入れ忘れて真っ白になるのを防ぐ |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -322,6 +323,29 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V8: 設定ファイルが無いプロジェクト
+
+検証日: 2026-09-26（pike から実際の業務アプリを開いて確認）
+
+**結果: 成立**（書かれていないキーを、アプリのエントリの静的な読み取りで補う）
+
+### きっかけ
+- 設定ファイルの無い業務アプリ（PrimeVue v4 unstyled + pt + Tailwind v4 の、このツールが想定する構成そのもの）を描くと、**真っ白**になりました。
+- 原因は、設定が無いと PrimeVue をアプリに入れないことでした。PrimeVue のコンポーネントは描画中に `this.$primevue.config` を読むので、`TypeError` で落ちます（`Property "$primevue" was accessed during render but is not defined`）。
+- 必要な情報（`unstyled` / `pt` / 読み込む CSS）は、どれもエントリ（`src/main.js`）に書いてありました。
+
+### 根拠
+- エントリをテキストとして読み、副作用の CSS の import・`primevue/config` の import 名・`app.use(<その名前>, { ... })` の `unstyled` と `pt` を取り出しました（`detect-config.ts`）。**エントリは実行しません。**
+- e2e では、fixture-app から設定ファイルを外したルートで描いた `<body>` が、明示の設定で描いたものと一致しました（UserPage / UserTable）。CSS の並びはエントリの import 順になるため、`<head>` は一致しません。
+- 業務アプリでも、設定ファイルを置かずに Checkbox を描け、警告は 0 件でした。
+
+### 仕様として決めたこと
+- 推測するのは設定に**書かれていない**キーだけです。`null` は「使わない」の明示なので推測しません。
+- エントリに `app.use(PrimeVue, ...)` が見つからなくても、依存に `primevue` があれば PrimeVue 本来の既定（`unstyled: false`）で入れます。真っ白より、スタイルの無い描画のほうが役に立つためです。既定をエントリから読んだときと同じ値にそろえ、経路によって描画が変わらないようにしています。
+- 読んだエントリは、何も推測できなかったときも `deps` に入れます（エントリを直したら呼び出し側が描き直せるように）。依存から PrimeVue を入れたときは `package.json` も入れます。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -343,6 +367,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `cli.ts`: 全体の流れと計測
   - `load-project-modules.ts`: V1 / V7
   - `deps-cache.ts`: V7
+  - `detect-config.ts`: V8
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3

@@ -19,6 +19,13 @@ do
   docker compose exec -T app "$BIN" render "$c" --root /app --out "/out/$name.html"
   echo "rendered $c"
 done
+# fixture-app without vue-preview.config.json: the config is inferred from src/main.ts (REPORT V8)
+docker compose exec -T app sh -c 'rm -rf /tmp/noconfig && mkdir /tmp/noconfig && for f in src node_modules package.json package-lock.json tsconfig.json; do ln -s /app/$f /tmp/noconfig/$f; done'
+for c in src/components/UserPage.vue src/components/UserTable.vue; do
+  name=$(basename "$c" .vue)
+  docker compose exec -T app "$BIN" render "$c" --root /tmp/noconfig --json --out "/out/noconfig-$name.json"
+  echo "rendered $c (inferred config)"
+done
 # the first run installs into the cache, the second reuses it
 for c in src/components/UserPage.vue src/components/UserTable.vue; do
   name=$(basename "$c" .vue)

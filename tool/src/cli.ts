@@ -9,6 +9,7 @@ import { ComponentGraph } from './resolve-components';
 import { buildTailwind, inlineUrls, resolveCssEntry } from './css';
 import { buildHtml } from './html';
 import { loadConfig, readJson, resolveAliases } from './config';
+import { completeConfig } from './detect-config';
 
 declare const VUE_PREVIEW_VERSION: string;
 const VERSION = typeof VUE_PREVIEW_VERSION === 'string' ? VUE_PREVIEW_VERSION : 'dev';
@@ -58,7 +59,10 @@ async function main() {
     }
   }
 
-  const { config, file: configFile } = loadConfig(root);
+  const { config: explicit, file: configFile } = loadConfig(root);
+  const aliases = resolveAliases(root, explicit);
+  // keys the config file leaves out are inferred from the app entry (REPORT V8)
+  const { config, detected, deps: detectDeps } = completeConfig(root, explicit, aliases);
   const warnings: string[] = [];
   const warn = (m: string) => void (warnings.includes(m) || warnings.push(m));
   const deps = new Set<string>();
@@ -67,8 +71,7 @@ async function main() {
     if (!abs.split(/[\\/]/).includes('node_modules')) deps.add(relPosix(root, abs));
   };
   if (configFile) addDep(configFile);
-
-  const aliases = resolveAliases(root, config);
+  detectDeps.forEach(addDep);
 
   // --- module loading --------------------------------------------------------
   let t = performance.now();
@@ -181,7 +184,7 @@ async function main() {
 
   if (values.timings) console.error(JSON.stringify({ timings, tailwind: tailwindInfo, resolved: mods.resolved }));
   const output = values.json
-    ? JSON.stringify({ html, deps: [...deps].sort(), warnings, modules: mods.source, timings, tailwind: tailwindInfo, resolved: mods.resolved }, null, 2)
+    ? JSON.stringify({ html, deps: [...deps].sort(), warnings, modules: mods.source, config: { file: configFile ? relPosix(root, configFile) : null, detected }, timings, tailwind: tailwindInfo, resolved: mods.resolved }, null, 2)
     : html;
   if (values.out) fs.writeFileSync(values.out, output);
   else process.stdout.write(output);

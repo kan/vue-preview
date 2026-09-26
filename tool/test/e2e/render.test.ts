@@ -11,6 +11,7 @@ interface Result {
   deps: string[];
   warnings: string[];
   modules: ProjectModules['source'];
+  config: { file: string | null; detected: string[] };
 }
 const load = (name: string): Result => JSON.parse(fs.readFileSync(path.join(OUT, `${name}.json`), 'utf8'));
 
@@ -83,6 +84,25 @@ describe('edge cases', () => {
     expect(r.html).toContain('data-vp-stub="FancyWidget"');
     expect(r.warnings.filter((w) => w.startsWith('stub <')).length).toBe(2);
   });
+});
+
+describe('inferred config (no vue-preview.config.json)', () => {
+  for (const name of ['UserPage', 'UserTable']) {
+    const r = load(`noconfig-${name}`);
+    const explicit = load(name);
+    test(`${name}: settings are read from src/main.ts`, () => {
+      expect(r.config).toEqual({ file: null, detected: ['globalCss', 'tailwind', 'primevue'] });
+      expect(r.deps).toContain('src/main.ts');
+    });
+    test(`${name}: renders like the explicit config`, () => {
+      expect(r.warnings).toEqual(explicit.warnings);
+      // same markup; the order of the inlined CSS follows the entry's imports instead
+      const body = (html: string) => html.slice(html.indexOf('<body'));
+      expect(body(r.html)).toBe(body(explicit.html));
+      expect(r.html).toMatch(/\.bg-brand-500\s*{/);
+      expect(r.html).toContain('data:font/woff2;base64,');
+    });
+  }
 });
 
 describe('dependency cache (no node_modules in the project)', () => {

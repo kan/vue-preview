@@ -48,3 +48,20 @@ export function resolveAliases(root: string, config: Config): Record<string, str
     ? Object.fromEntries(Object.entries(config.aliases).map(([k, v]) => [k, path.resolve(root, v)]))
     : aliasesFromTsconfig(root);
 }
+
+/**
+ * Map an import specifier to an absolute path if it points into the project (relative, or
+ * through one of `aliases` — absolute dirs from `resolveAliases`); null for a package.
+ */
+export function projectPath(spec: string, fromFile: string, aliases: Record<string, string>): string | null {
+  if (spec.startsWith('./') || spec.startsWith('../')) return path.resolve(path.dirname(fromFile), spec);
+  for (const [alias, dir] of Object.entries(aliases)) {
+    if (spec === alias || spec.startsWith(alias + '/')) return path.join(dir, spec.slice(alias.length));
+  }
+  return null;
+}
+
+/** The first candidate that exists and is a file. */
+export function firstFile(candidates: string[]): string | null {
+  return candidates.find((f) => fs.statSync(f, { throwIfNoEntry: false })?.isFile()) ?? null;
+}

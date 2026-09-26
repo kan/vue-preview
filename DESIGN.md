@@ -46,6 +46,7 @@ vue-preview --version
     "deps": ["src/components/UserPage.vue", "..."],
     "warnings": ["..."],
     "modules": { "kind": "cache", "dir": "/root/.cache/vue-preview/deps/da28523b7762e04c" },
+    "config": { "file": null, "detected": ["globalCss", "tailwind", "primevue"] },
     "timings": { "loadModules": 0, "compile": 0, "ssr": 0, "css": 0, "total": 0 },
     "tailwind": { "candidates": 0, "extractor": "oxide" },
     "resolved": { "vue": "/app/node_modules/vue/index.mjs" }
@@ -85,13 +86,28 @@ vue-preview --version
 | `placeholderIterations` | プレースホルダを反復したときの要素数 |
 | `maxDepth` | 子コンポーネント解決の深さの上限 |
 
-`main.ts` は実行しません。そこで import している CSS（例: `primeicons/primeicons.css`）は、`globalCss` に列挙してください。
+`main.ts` は実行しません。
+
+### 設定の推測（`detect-config.ts`、REPORT V8）
+
+設定ファイルに書かれていない（`undefined` の）キーは、アプリのエントリ（`src/main.{ts,js,mts,mjs}`）を**テキストとして読んで**推測します。`null` は「明示的に使わない」の意味なので推測しません。書いた値は常に推測より優先します。
+
+| キー | 推測の仕方 |
+| --- | --- |
+| `globalCss` | エントリが副作用で import している `.css`（`import './style.css'`）を、並び順のまま |
+| `tailwind.entry` | そのうち `@import "tailwindcss"` を含むローカルの CSS |
+| `primevue` | エントリの `app.use(<primevue/config の import>, { ... })` から `unstyled` と `pt`。`pt` はその識別子の import 元のファイル（`index.js` などを補う。`{ pt }` の省略記法も読む）。エントリに無くても、package.json の依存に `primevue` があれば PrimeVue 本来の既定（`unstyled: false`）で入れる。入れないと、PrimeVue のコンポーネントが `$primevue` を読んで落ちる |
+
+- エントリの相対 import と、alias（`aliases` か tsconfig の `paths`）経由の import を解決します。
+- 読んだエントリは、何も推測できなかったときも `deps` に入ります（`app.use(PrimeVue, ...)` や CSS の import を足したら描き直せるように）。依存から PrimeVue を入れたときは `package.json` も入ります。推測したキーは `--json` の `config.detected` に出ます。
+- コメントの中の import は数えません。`import X, { a } from` の形も読みます。
 
 ## 処理の流れ
 
 ```
 cli.ts
  ├─ deps-cache.ts            ルートで vue を解決できなければ依存キャッシュを用意し、NODE_PATH 付きで自分を起動し直す
+ ├─ detect-config.ts         設定ファイルに無いキーを src/main.ts から推測する
  ├─ load-project-modules.ts  ルート（または依存キャッシュ）の node_modules から vue / compiler-sfc / server-renderer を解決・import
  ├─ resolve-components.ts    ルート SFC から import を再帰的にたどってコンポーネント定義を組み立てる
  │   ├─ compile.ts           parse → compileScript（静的解析のみ）→ compileTemplate（function モード）→ compileStyle

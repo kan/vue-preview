@@ -92,6 +92,14 @@ fixture にない値は、次の順で補われます。
 
 `aliases` を省略すると、tsconfig の `paths` から読み取ります。各キーの詳細は [DESIGN.md](DESIGN.md#設定ファイル-vue-previewconfigjsonルート直下) を参照してください。
 
+設定ファイルは無くてもかまいません。書いていないキーは、アプリのエントリ（`src/main.ts` / `src/main.js`）を読んで推測します。`main.ts` は実行しません。
+
+- `globalCss`：エントリで import している CSS
+- `tailwind`：そのうち `@import "tailwindcss"` を含むもの
+- `primevue`：`app.use(PrimeVue, { unstyled, pt })` の指定。依存に primevue があれば、エントリに無くても PrimeVue の既定（`unstyled: false`）で入れる
+
+推測で足りないとき（`pt` をエントリの外で組み立てている、など）は、そのキーだけを設定ファイルに書いてください。
+
 ### node_modules が無いプロジェクト
 
 node_modules がコンテナの中にしか無いプロジェクトも、ホストから描画できます。ルートで `vue` を解決できないとき、vue-preview はロックファイル（`package-lock.json` / `bun.lock` / `yarn.lock` / `pnpm-lock.yaml`）どおりの依存をキャッシュへ入れて使います。
