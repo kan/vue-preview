@@ -1,8 +1,8 @@
 # DESIGN.md — vue-preview の設計
 
-Vue SFC を受け取り、簡易レンダリングした「CSS インライン済みの 1 枚 HTML」を出力する CLI ツールです。最終的には ADE「pike」から外部ツールとして呼ばれ、人間向けのプレビューに使われます。
+Vue SFC を受け取り、簡易レンダリングした「CSS インライン済みの 1 枚 HTML」を出力する CLI ツールです。ADE「pike」のエディタの Preview が外部ツールとして呼び、人間向けのプレビューに使っています（pike 0.58.0 から）。
 
-現在は **方式検証の PoC** 段階です。各方式が成立するかどうかの結果は [REPORT.md](REPORT.md) にまとめています。
+各方式が成立するかどうかの検証と、pike で使って見つかった課題への対応は [REPORT.md](REPORT.md) にまとめています。
 
 ## 設計の前提
 
@@ -60,11 +60,11 @@ vue-preview --version
 
   - `deps`: 出力に影響したファイル（SFC、CSS、pt 定義、fixture、設定）のルート相対パス。`node_modules` の中のファイル（プロジェクトのものも依存キャッシュのものも）は含めない。
   - `modules`: ライブラリの出どころ。`{ "kind": "project" }` か `{ "kind": "cache", "dir": ... }`。
-  - `inputs`: fixture でルートコンポーネントに与えられるもの（REPORT V12）。呼び出し側（pike）は、これから値の入力フォームを作る。
+  - `inputs`: fixture でルートコンポーネントに与えられるもの（REPORT V12）。呼び出し側（pike）は、これを値の入力フォームの欄にする。
     - `props`: 宣言された props。型と、静的に読めた既定値（`default`）。
     - `values`: props 以外にテンプレートが参照した識別子（import を除く）。描画中に記録するので、実際に使われた順に並ぶ。静的に読めた初期値（`ref(false)` など）があれば `default`。`<script setup>` で定義した関数（`setup-const` で静的な値でないもの）は JSON で与えられないので除く。関数呼び出しの戻り値から受け取った名前（`const { t } = useI18n()`、`const store = useStore()`。`ref` / `computed` などのリアクティビティの呼び出しは除く）には `origin: "call"` を付ける。composable の関数やストアが多く、呼び出し側は畳んで見せてよい。
     - `fixture`: 使った fixture（ルート相対。ルートの外なら `../` で始まる）。無ければ null。
-  - `html` / `deps` / `warnings` / `modules` / `inputs` が契約です。それ以外は PoC の計測用です。
+  - `html` / `deps` / `warnings` / `modules` / `inputs` が契約です（pike が読む）。`config` / `timings` / `tailwind` / `resolved` は確認と計測のための欄で、形を変えることがあります。
 - 依存キャッシュを初めて作るときは、その旨を stderr に 1 行出す（stdout は出力専用）。
 - 依存を用意できないとき（ロックファイルが無い、workspaces、install の失敗）は、理由を stderr に出して終了コード 1 で終わる。
 - `--portal`: PrimeVue の Portal の扱い（後述）。既定は `teleport`。
@@ -213,7 +213,7 @@ PrimeVue の Portal は `mounted` になるまで何も描画しません。そ�
 
 ## スコープ外（提案として REPORT.md に記録）
 
-- pike との統合、常駐モード（`serve`）、`inspect` サブコマンド
+- 常駐モード（`serve`）、`inspect` サブコマンド（pike とは単発の CLI で統合済み）
 - musl（Alpine）と linux-arm64 / darwin-x64 向けのビルド
 - monorepo（workspaces）の依存キャッシュ
 - PrimeVue の styled mode、v3 対応

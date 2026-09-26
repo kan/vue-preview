@@ -1,6 +1,8 @@
-# vue-preview PoC 検証レポート
+# vue-preview 検証レポート
 
-検証日: 2026-09-25
+方式を確かめるための検証（V1〜V6）から始め、pike から実際のアプリを描いて見つかった課題（V7 以降）を足してきた記録です。v0.6.0 まで公開しており、pike 0.58.0 のエディタの Preview（Vue の描画・値を仮に入れるフォーム・インストールの案内）がこの CLI を使っています。
+
+V1〜V6 の検証日: 2026-09-25（V7 以降は各節に書きます）
 検証環境: Linux x64 / Docker 29.3 / `node:22`（Debian）/ `oven/bun:1`（Bun 1.4.2）
 
 | パッケージ | バージョン（fixture-app にインストール） |
@@ -41,21 +43,10 @@
 
 ## 実行方法
 
-```sh
-docker compose up -d app
-docker compose exec app npm install          # node_modules は named volume の中だけ
-scripts/build.sh                                   # = docker compose run --rm bun bun build src/cli.ts --compile --compile-autoload-package-json ...
-docker compose exec app /opt/vue-preview/vue-preview-linux-x64 render src/components/UserPage.vue --root /app --json > out/UserPage.json
-scripts/render.sh src/components/UserPage.vue      # 補助: JSON と HTML を out/ に書き出し、warnings/deps/timings を表示
-```
+コマンドは AGENTS.md の「開発コマンド」、CLI のオプションと `--json` の出力は DESIGN.md の「CLI」を参照してください。
 
-- AGENTS.md 記載の `docker-compose.yml` をそのまま使っています。検証サンドボックスではコンテナの外部通信にホストのプロキシが必要だったため、`docker-compose.override.yml`（git 管理外）で `network_mode: host`、`HTTPS_PROXY`、CA を追加しました。通常の環境ではこのファイルは不要です。
+- 検証サンドボックスではコンテナの外部通信にホストのプロキシが必要だったため、`docker-compose.override.yml`（git 管理外）で `network_mode: host`、`HTTPS_PROXY`、CA を追加しました。通常の環境ではこのファイルは不要です。
 - 比較用の Vite dev サーバは `docker compose exec app npx vite --host 0.0.0.0` で起動し、`http://localhost:5173/compare.html?c=UserTable` を開きます（`src/compare.ts` が fixture と同じデータで 1 コンポーネントをマウントします）。
-
-CLI（PoC 版）の追加オプション:
-- `--portal teleport|inline|off`: V4 の Portal の扱い（既定は teleport）
-- `--timings`: 計測値を stderr に出す（`--json` の出力には常に `timings` を含める）
-- JSON 出力には、仕様の `html` / `deps` / `warnings` に加えて、`timings` / `tailwind` / `resolved`（解決したモジュールパス）を含めています。
 
 ---
 
@@ -118,7 +109,7 @@ CLI（PoC 版）の追加オプション:
 
 ### プレースホルダ
 `placeholder.ts`: 関数を target にした Proxy です。
-- 文字列化すると `{{ order.items[0].name }}` のような参照式になります。
+- 文字列化すると `{{ order.items[0].name }}` のような参照式になります（表示は V11 で末尾だけに変えました）。
 - プロパティアクセスを連鎖でき、呼び出すと `{{ formatYen(…) }}` を返します。
 - `Symbol.iterator` で 3 件を返します。
 - `Symbol.toPrimitive('number')` は 1 です。
@@ -215,7 +206,7 @@ CLI（PoC 版）の追加オプション:
   - コンポーネント定義に `__scopeId` を持たせ、描画された要素に `data-v-7100860d` などが付くことを確認しました。
   - slot に渡した中身には、Vue SSR の仕様どおり `data-v-xxx-s` も付きます。
 - **グローバル CSS**: 設定の `globalCss` を読み込みます。
-  - パッケージ指定（`primeicons/primeicons.css`）にも対応しました。fixture-app の `main.ts` は `import 'primeicons/primeicons.css'` していますが、ツールは `main.ts` を実行しないので、設定に列挙する方式にしています。
+  - パッケージ指定（`primeicons/primeicons.css`）にも対応しました。ツールは `main.ts` を実行しないので、この時点では設定へ列挙する方式にしました。設定に書かれていないときの推測は、V8（エントリの CSS の import）と V14（`index.html` の link）で足しています。
   - `tailwind.entry` と同じファイルは、Tailwind の出力と重複するのでスキップします。
 - **Tailwind v4**:
   - `@tailwindcss/node` の `compile(css, { base, from, onDependency })` → `build(candidates)` で生成しました。インストール済み 4.3.3 の `index.d.ts` で API を確認しています。
@@ -267,7 +258,7 @@ CLI（PoC 版）の追加オプション:
 Vite 側の比較ページ（`compare.html`）は fixture の値を props として渡します。`UserPage` は `fetch` をモックして fixture の `users` を返します。この条件で、プレビューと Vite が同じ状態を描画することを確認しました。
 
 ### 実行時間
-`docker compose exec app /opt/vue-preview/vue-preview render src/components/UserPage.vue --root /app --json` を計測しました。「cold」は各回の前に `echo 3 > /proc/sys/vm/drop_caches` でページキャッシュを捨てています。
+`docker compose exec app /opt/vue-preview/vue-preview render src/components/UserPage.vue --root /app --json` を計測しました（当時のバイナリ名。今は `vue-preview-linux-x64`）。「cold」は各回の前に `echo 3 > /proc/sys/vm/drop_caches` でページキャッシュを捨てています。
 
 | | wall（compose exec 込み） | 内部合計 | loadModules | compile | ssr | css |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -291,7 +282,8 @@ Vite 側の比較ページ（`compare.html`）は fixture の値を props とし
   - コンパイラと SSR の JIT ウォームアップ: SFC コンパイル約 110 ms のうち大半と、SSR の約 60 ms
   - Tailwind のコンパイラ初期化
 - 常駐して変更があった SFC だけを再コンパイルすれば、1 回あたり **100 ms 前後**まで下がる見込みです。SSR の 2 回目は 40 ms で、SFC 単位のキャッシュも効きます。
-- 保存のたびにプレビューを更新する用途なら、常駐は**あった方がよい**です。一方、手動で開く用途なら 1 秒弱で実用範囲です。まず単発の CLI で統合し、必要に応じて `serve` を足すのが妥当です（提案。スコープ外のため未実装）。
+- 保存のたびにプレビューを更新する用途なら、常駐は**あった方がよい**です。一方、手動で開く用途なら 1 秒弱は実用範囲です。まず単発の CLI で統合し、`serve` は必要になってから足すのが妥当です。
+- pike には単発の CLI で統合しました（保存のたびに `render --json` を起動します）。`serve` は未実装です。
 
 ---
 
@@ -447,13 +439,14 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ### 方式
 - props は、SFC の静的解析（V2）で得た宣言をそのまま出します。型と、リテラルの既定値です。
-- props 以外の値は、ルートの ctx Proxy が識別子を解決するときに記録します。import の値と props を除いた、fixture が埋められる名前です（`onInput`）。静的に読めない computed や、`onMounted` で入れる ref もここに並びます。
+- props 以外の値は、ルートの ctx Proxy が識別子を解決するときに記録します（`CtxSources.inputs` に渡した `ComponentGraph.rootInputs`）。import の値と props を除いた、fixture が埋められる名前です。静的に読めない computed や、`onMounted` で入れる ref もここに並びます。
 - 描画中に記録するので、並ぶのは実際に参照された名前だけです。`v-if` で描かれなかった部分の名前は、条件を満たす値を与えて描き直すと現れます。
 - 関数呼び出しの戻り値から受け取った名前（`const { t } = useI18n()`、`const store = useProjectStore()`）には `origin: "call"` を付けます。pike のコンポーネントで一覧を見たところ、`t` やストア、composable の関数が普通の値と同じ並びに出て、JSON では意味のある値を与えにくい欄になっていました。`ref` / `computed` などのリアクティビティの呼び出しはコンポーネント自身の状態なので、印を付けません。
 
 ### 根拠
 - e2e では、PlaceholderDemo の props（`order`、`showNote`）と値（`mode`）、UserTable が使った fixture を確かめました。
 - 業務アプリのダイアログでは、props に `modelValue` などが並び、値は空でした（ダイアログが閉じているため）。
+- pike は `inputs` から値を仮に入れるフォームを作り、入れた値を `--fixture` で渡して描き直します。`origin: "call"` の値は畳んだ群に分けています。
 
 ---
 
@@ -535,16 +528,18 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `detect-config.ts`（`viteAliases`）/ `text-scan.ts`: V9
   - `detect-config.ts`（`entryComponents` / `dtsComponents`）/ `resolve-components.ts`（`resolveGlobalTag`）: V10
   - `placeholder.ts`（`decoratePlaceholders`）: V11
-  - `ctx-proxy.ts`（`onInput`）/ `cli.ts`（`rootInputs`）: V12
+  - `ctx-proxy.ts`（`CtxSources.inputs`）/ `resolve-components.ts`（`rootInputs` / `inputs`）: V12
   - `i18n.ts` / `compile.ts`（`i18nNames`）: V13
-  - `detect-config.ts`（`htmlStylesheets`）/ `css.ts`（`inlineUrls` の `publicDir`）: V14
+  - `detect-config.ts`（`htmlStylesheets`）/ `config.ts`（`resolveUrl`）: V14
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3
   - `css.ts`: V5
   - `html.ts`
 - `fixture-app/src/components/`: 検証対象の画面
-  - `edge/`: プレースホルダ、循環参照、未解決コンポーネントの検証用
+  - `edge/`: プレースホルダ、循環参照、未解決コンポーネント、グローバル登録、i18n の検証用
+- `fixture-app/src/locales/`: V13 のメッセージファイル（名前付き export の `ja.ts` と default export の `en.ts`）
+- `fixture-app/index.html` / `public/static/`: V14 の link と、その CSS
 - `fixture-app/src/compare.ts` / `compare.html`: V6 の比較用エントリ
 - `report-assets/`: スクリーンショット
 - `scripts/*.sh`: ビルドと実行の補助スクリプト

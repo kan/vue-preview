@@ -1,6 +1,6 @@
 # AGENTS.md — vue-preview 開発ガイド
 
-Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングする CLI（`vue-preview`）です。現在は PoC 段階です。優先するのはコード品質より「何が動いて何が動かないか」を明らかにすることです。
+Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングする CLI（`vue-preview`）です。pike のエディタの Preview が使っています。`--json` の `html` / `deps` / `warnings` / `modules` / `inputs` は pike が読む契約なので、形を変えるときは DESIGN.md と pike 側もそろえます。新しい方式を試すときは、何が動いて何が動かないかを REPORT.md に残します。
 
 | ドキュメント | 内容 |
 | --- | --- |
@@ -70,11 +70,8 @@ docker compose exec app npx vite --host 0.0.0.0       # 比較用: http://localh
 
 ## テスト
 
-- `tool/test/unit`: Vue に依存しない純粋なロジック（プレースホルダ、リテラル評価、CSS の url 置換、設定、依存キャッシュのキーと置き場）のテストです。
-- `tool/test/e2e`: `scripts/e2e.sh` が `fixture-app` のコンポーネントをバイナリで描画し、`out/*.json` を検証します。対象は次のとおりです。
-  - fixture の反映、pt クラス、scoped 属性、Teleport、外部 URL がないこと
-  - script を実行していないこと、循環参照、スタブ
-  - `bare` コンテナ（node_modules 無し）が依存キャッシュを使って描いた HTML が、プロジェクトの node_modules で描いた HTML と一致すること
+- `tool/test/unit`: Vue に依存しない純粋なロジックのテストです。ファイル名は対象のモジュールに合わせます（`detect-config.test.ts` なら `detect-config.ts`）。
+- `tool/test/e2e`: `scripts/e2e.sh` が `fixture-app` のコンポーネントをバイナリで描画し、`out/*.json` を検証します。REPORT.md の各 V の「根拠」にある e2e の確認が、ここのテストです。描き方の違うルート（設定ファイル無し、tsconfig 無し、node_modules 無しの `bare`）も `e2e.sh` が作ります。
 - 挙動を変えたら、`fixture-app` にケースを足し、e2e の期待値を更新してください。エッジケースは `fixture-app/src/components/edge/` に置きます。
 - 見た目の確認は、`out/*.html` と Vite の `compare.html` をブラウザで並べて行います（REPORT V6 を参照）。
 
