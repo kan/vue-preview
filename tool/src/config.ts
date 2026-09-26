@@ -9,6 +9,11 @@ export interface Config {
   tailwind?: { entry: string } | null;
   primevue?: { unstyled?: boolean; pt?: string; portal?: 'teleport' | 'inline' | 'off' } | null;
   componentDirs?: string[];
+  /**
+   * Globally registered / auto-imported components: tag name -> `./root-relative.vue`, or a
+   * package specifier (`primevue/dialog`, `pkg#NamedExport`). Looked up by PascalCase name.
+   */
+  components?: Record<string, string>;
   placeholderIterations?: number;
   maxDepth?: number;
 }
@@ -63,7 +68,16 @@ export function projectPath(spec: string, fromFile: string, aliases: Record<stri
   return null;
 }
 
+/** Whether `f` exists and is a file (false for a path below a file too: ENOTDIR). */
+export function isFile(f: string): boolean {
+  try {
+    return fs.statSync(f).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /** The first candidate that exists and is a file. */
 export function firstFile(candidates: string[]): string | null {
-  return candidates.find((f) => fs.statSync(f, { throwIfNoEntry: false })?.isFile()) ?? null;
+  return candidates.find(isFile) ?? null;
 }

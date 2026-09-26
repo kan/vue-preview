@@ -3,5 +3,6 @@
   "globalCss": ["src/styles/main.css", "primeicons/primeicons.css"],
   "tailwind": { "entry": "src/styles/main.css" },
   "primevue": { "unstyled": true, "pt": "src/pt/preset.ts" },
-  "componentDirs": []
+  "componentDirs": [],
+  "components": { "app-badge": "./src/components/StatusBadge.vue", "pv-tag": "primevue/tag" }
 }

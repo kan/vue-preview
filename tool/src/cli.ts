@@ -104,6 +104,7 @@ async function main() {
   const graph = new ComponentGraph(mods, {
     aliases,
     componentDirs: (config.componentDirs ?? []).map((d) => path.resolve(root, d)),
+    components: config.components ?? {},
     maxDepth: config.maxDepth ?? 20,
     placeholder: { iterations: config.placeholderIterations ?? 3 },
   });

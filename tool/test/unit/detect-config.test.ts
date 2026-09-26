@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { completeConfig, entryImports, primeVueUse, viteAliases } from '../../src/detect-config';
+import { completeConfig, dtsComponents, entryComponents, entryImports, primeVueUse, viteAliases } from '../../src/detect-config';
 import { balancedBlock, splitTopLevel } from '../../src/text-scan';
 
 const SITTER_LIKE = `import { createApp } from 'vue';
@@ -61,6 +61,33 @@ describe('reading the app entry', () => {
     expect(balancedBlock('x({ a: { b: 1 } }, 2)', 2)).toBe('{ a: { b: 1 } }');
     expect(balancedBlock("{ a: '}', b: [1] } tail", 0)).toBe("{ a: '}', b: [1] }");
     expect(splitTopLevel("a: f(1, 2), b: '1,2', c: [3, 4]")).toEqual(['a: f(1, 2)', "b: '1,2'", 'c: [3, 4]']);
+  });
+});
+
+describe('global and auto-imported components', () => {
+  test('app.component registrations; commented ones do not count', () => {
+    const src = "app.component('pv-button', Button);\n// app.component('old', Old);\napp.component(\"s-radio\", SRadio);\napp.component(Dyn.name, Dyn);";
+    expect(entryComponents(src)).toEqual([
+      { name: 'pv-button', ident: 'Button' },
+      { name: 's-radio', ident: 'SRadio' },
+    ]);
+  });
+
+  test('components.d.ts entries (default and named exports)', () => {
+    const src = `declare module 'vue' {
+  export interface GlobalComponents {
+    AppHeader: typeof import('./src/components/AppHeader.vue')['default']
+    'LazyThing': typeof import("../components/Thing.vue")['default']
+    PButton: typeof import('primevue')['Button']
+    RouterLink: typeof import('vue-router')['RouterLink']
+  }
+}`;
+    expect(dtsComponents(src)).toEqual([
+      { name: 'AppHeader', spec: './src/components/AppHeader.vue', exportName: 'default' },
+      { name: 'LazyThing', spec: '../components/Thing.vue', exportName: 'default' },
+      { name: 'PButton', spec: 'primevue', exportName: 'Button' },
+      { name: 'RouterLink', spec: 'vue-router', exportName: 'RouterLink' },
+    ]);
   });
 });
 
@@ -136,7 +163,7 @@ describe('completeConfig', () => {
       'src/main.js': SITTER_LIKE,
       'src/assets/tailwind.css': '@import "tailwindcss";',
     });
-    const r = completeConfig(root, { globalCss: [], tailwind: null, primevue: null });
+    const r = completeConfig(root, { globalCss: [], tailwind: null, primevue: null, components: {} });
     expect(r.config.tailwind).toBeNull();
     expect(r.config.primevue).toBeNull();
     expect(r.detected).toEqual([]);
@@ -174,6 +201,39 @@ describe('completeConfig', () => {
 
   test('nothing to infer', () => {
     expect(completeConfig(project({ 'package.json': '{}' }), {}).detected).toEqual([]);
+  });
+
+  test('components from app.component in the entry and from components.d.ts', () => {
+    const root = project({
+      'tsconfig.json': '{"compilerOptions":{"paths":{"@/*":["src/*"]}}}',
+      'src/main.ts': "import Tag from 'primevue/tag';\nimport SButton from '@/components/Button.vue';\nimport Box from './components/Box';\napp.component('pv-tag', Tag);\napp.component('s-button', SButton);\napp.component('s-box', Box);",
+      'src/components/Button.vue': '<template><button /></template>',
+      'src/components/Box/index.vue': '<template><div /></template>',
+      'components.d.ts': "AutoCard: typeof import('./src/components/AutoCard.vue')['default']\nPButton: typeof import('primevue')['Button']",
+      'src/components/AutoCard.vue': '<template><div /></template>',
+    });
+    const r = completeConfig(root, {});
+    // project files are kept as written (extensions are filled in when a tag is resolved)
+    expect(r.config.components).toEqual({
+      AutoCard: './src/components/AutoCard.vue',
+      PButton: 'primevue#Button',
+      'pv-tag': 'primevue/tag',
+      's-button': './src/components/Button.vue',
+      's-box': './src/components/Box',
+    });
+    expect(r.detected).toContain('components');
+    expect(r.deps).toContain(path.join(root, 'components.d.ts'));
+    // an explicit value wins
+    expect(completeConfig(root, { components: {} }).config.components).toEqual({});
+  });
+
+  test('nothing is checked on disk; an empty components.d.ts is still a dependency', () => {
+    const root = project({ 'components.d.ts': "Foo: typeof import('./src/Missing.vue')['default']" });
+    const r = completeConfig(root, {});
+    expect(r.config.components).toEqual({ Foo: './src/Missing.vue' });
+    expect(r.deps).toEqual([path.join(root, 'components.d.ts')]);
+    const empty = project({ 'components.d.ts': 'export interface GlobalComponents {}' });
+    expect(completeConfig(empty, {}).deps).toEqual([path.join(empty, 'components.d.ts')]);
   });
 
   test('aliases: tsconfig paths first, then vite.config; the file read is a dependency', () => {

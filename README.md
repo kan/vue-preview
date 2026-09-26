@@ -97,6 +97,7 @@ fixture にない値は、次の順で補われます。
 - `globalCss`：エントリで import している CSS
 - `tailwind`：そのうち `@import "tailwindcss"` を含むもの
 - `primevue`：`app.use(PrimeVue, { unstyled, pt })` の指定。依存に primevue があれば、エントリに無くても PrimeVue の既定（`unstyled: false`）で入れる
+- `components`：`app.component('s-button', SButton)` のようなグローバル登録と、自動 import の `components.d.ts`。どちらも import せずに使う子コンポーネントを描くために使う
 
 推測で足りないとき（`pt` をエントリの外で組み立てている、など）は、そのキーだけを設定ファイルに書いてください。
 

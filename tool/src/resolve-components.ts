@@ -10,6 +10,8 @@ import { createPlaceholder, type PlaceholderOptions } from './placeholder';
 export interface ResolveOptions {
   aliases: Record<string, string>; // '@' -> absolute dir
   componentDirs: string[]; // absolute dirs
+  /** Global / auto-imported components by PascalCase name -> config `components` value. */
+  components: Record<string, string>;
   maxDepth: number;
   placeholder: PlaceholderOptions;
 }
@@ -17,6 +19,7 @@ export interface ResolveOptions {
 const BUILTIN_TAGS = new Set(['Transition', 'TransitionGroup', 'KeepAlive', 'Teleport', 'Suspense', 'component', 'slot', 'template']);
 const PROP_TYPES: Record<string, unknown> = { Boolean, String, Number, Array, Object, Function, Date, Symbol };
 
+/** `pv-button` / `PvButton` -> `PvButton`: the name components are looked up by. */
 const pascal = (s: string) => s.replace(/(^|-)(\w)/g, (_, __, c) => c.toUpperCase());
 
 export class ComponentGraph {
@@ -25,11 +28,15 @@ export class ComponentGraph {
   readonly deps = new Set<string>();
   readonly time = { sfcCompile: 0, packageImport: 0 };
   private defs = new Map<string, any>();
+  /** `opts.components` keyed by PascalCase name. */
+  private components: Record<string, string>;
 
   constructor(
     private mods: ProjectModules,
     private opts: ResolveOptions,
-  ) {}
+  ) {
+    this.components = Object.fromEntries(Object.entries(opts.components).map(([tag, ref]) => [pascal(tag), ref]));
+  }
 
   warn(msg: string) {
     if (!this.warnings.includes(msg)) this.warnings.push(msg);
@@ -151,6 +158,15 @@ export class ComponentGraph {
     for (const dir of this.opts.componentDirs) {
       const f = path.join(dir, `${name}.vue`);
       if (fs.existsSync(f)) return this.build(f, stack);
+    }
+    // registered in main.ts (app.component) or auto-imported (components.d.ts), REPORT V10: an
+    // import from the root (`./src/...` resolves against it) through the same path as any import
+    const ref = this.components[name];
+    if (ref) {
+      const [spec, exportName = 'default'] = ref.split('#');
+      const def = await this.resolveImport(name, spec, exportName, path.join(this.mods.root, 'package.json'), stack);
+      // a configured component that is missing is a stub with the reason, not a silent fallback
+      return def ?? this.stub(tag, `'${spec}' has no export '${exportName}'`);
     }
     // PrimeVue components registered globally (e.g. via a resolver plugin)
     try {

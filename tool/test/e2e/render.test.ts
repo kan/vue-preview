@@ -86,12 +86,24 @@ describe('edge cases', () => {
   });
 });
 
+describe('globally registered components (app.component in src/main.ts)', () => {
+  for (const name of ['GlobalRegistered', 'noconfig-GlobalRegistered']) {
+    const r = load(name);
+    test(`${name}: a project SFC and a package component render instead of stubs`, () => {
+      expect(r.html).not.toContain('data-vp-stub');
+      expect(r.html).toContain('招待中'); // StatusBadge via <app-badge status="invited">
+      expect(r.html).toContain('global-tag'); // primevue/tag via <pv-tag>
+      expect(r.warnings).toEqual([]);
+    });
+  }
+});
+
 describe('inferred config (no vue-preview.config.json)', () => {
   for (const name of ['UserPage', 'UserTable']) {
     const r = load(`noconfig-${name}`);
     const explicit = load(name);
     test(`${name}: settings are read from src/main.ts`, () => {
-      expect(r.config).toEqual({ file: null, detected: ['globalCss', 'tailwind', 'primevue'] });
+      expect(r.config).toEqual({ file: null, detected: ['globalCss', 'tailwind', 'primevue', 'components'] });
       expect(r.deps).toContain('src/main.ts');
     });
     test(`${name}: renders like the explicit config`, () => {

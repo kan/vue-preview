@@ -10,6 +10,8 @@ import { balancedBlock, objectEntry, splitTopLevel, stripComments, unquote } fro
 const ENTRY_CANDIDATES = ['src/main.ts', 'src/main.js', 'src/main.mts', 'src/main.mjs'];
 const VITE_CONFIGS = ['vite.config.ts', 'vite.config.mts', 'vite.config.js', 'vite.config.mjs', 'vite.config.cjs'];
 const SCRIPT_EXTS = ['', '.ts', '.js', '.mts', '.mjs', '/index.ts', '/index.js'];
+/** Where unplugin-vue-components and Nuxt write the list of auto-imported components. */
+const DTS_CANDIDATES = ['components.d.ts', 'src/components.d.ts', 'types/components.d.ts', '.nuxt/components.d.ts'];
 
 export interface CompletedConfig {
   config: Config;
@@ -55,6 +57,21 @@ export function primeVueUse(source: string, ident: string): PrimeVueUse | null {
   // `pt: Aura`, or the shorthand `{ pt }`
   const pt = /(?:^|[{,\s])pt\s*(?::\s*([\w$]+)\s*)?[,}\n]/.exec(options);
   return { unstyled: unstyled ? unstyled[1] === 'true' : undefined, ptName: pt ? (pt[1] ?? 'pt') : undefined };
+}
+
+/** `app.component('s-button', SButton)` of an app entry (name as a string literal, value an identifier). */
+export function entryComponents(source: string): { name: string; ident: string }[] {
+  return [...stripComments(source).matchAll(/\.component\(\s*['"]([^'"]+)['"]\s*,\s*([\w$]+)\s*\)/g)].map(([, name, ident]) => ({ name, ident }));
+}
+
+/**
+ * The components a generated `components.d.ts` declares:
+ * `Button: typeof import('./src/components/Button.vue')['default']` (unplugin-vue-components,
+ * Nuxt) and `PButton: typeof import('primevue')['Button']` (named exports of a package).
+ */
+export function dtsComponents(source: string): { name: string; spec: string; exportName: string }[] {
+  const re = /['"]?([\w$-]+)['"]?\s*:\s*typeof\s+import\(\s*['"]([^'"]+)['"]\s*\)\s*\[\s*['"]([\w$]+)['"]\s*\]/g;
+  return [...stripComments(source).matchAll(re)].map(([, name, spec, exportName]) => ({ name, spec, exportName }));
 }
 
 /**
@@ -124,8 +141,34 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
   const aliases = resolveAliases(root, config);
 
   // only keys that are absent: `null` in the config means "explicitly off"
-  const needs = (key: 'globalCss' | 'tailwind' | 'primevue') => config[key] === undefined;
-  const entry = needs('globalCss') || needs('tailwind') || needs('primevue') ? firstFile(ENTRY_CANDIDATES.map((n) => path.join(root, n))) : null;
+  const needs = (key: 'globalCss' | 'tailwind' | 'primevue' | 'components') => config[key] === undefined;
+  const components: Record<string, string> = {};
+  /**
+   * The config `components` value for an import: `./root-relative` for a project file, else the
+   * package specifier. **Nothing is checked on disk here** (a Nuxt d.ts lists hundreds of
+   * components on every render); resolving the tag checks the one that is used.
+   */
+  const componentRef = (spec: string, from: string, exportName = 'default') => {
+    const local = projectPath(spec, from, aliases);
+    if (local) return `./${relPosix(root, local)}`;
+    return exportName === 'default' ? spec : `${spec}#${exportName}`;
+  };
+
+  // auto-imported components (unplugin-vue-components / Nuxt) are listed in a generated d.ts
+  if (needs('components')) {
+    for (const dts of DTS_CANDIDATES.map((n) => path.join(root, n))) {
+      const source = readIfExists(dts);
+      if (source === null) continue;
+      // a dependency even while empty: the dev server fills it in later
+      deps.push(dts);
+      for (const c of dtsComponents(source)) components[c.name] = componentRef(c.spec, dts, c.exportName);
+    }
+  }
+
+  const entry =
+    needs('globalCss') || needs('tailwind') || needs('primevue') || needs('components')
+      ? firstFile(ENTRY_CANDIDATES.map((n) => path.join(root, n)))
+      : null;
   if (entry) {
     // the entry decides the inferred keys, so a change to it (adding app.use(PrimeVue), a CSS
     // import) changes the output even when nothing could be inferred yet
@@ -139,7 +182,7 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
       detected.push('globalCss');
     }
     if (needs('tailwind')) {
-      const tw = css.find((c) => c.file && firstFile([c.file]) && /@import\s+['"]tailwindcss['"]/.test(fs.readFileSync(c.file, 'utf8')))?.file;
+      const tw = css.find((c) => c.file && /@import\s+['"]tailwindcss['"]/.test(readIfExists(c.file) ?? ''))?.file;
       if (tw) {
         config.tailwind = { entry: relPosix(root, tw) };
         detected.push('tailwind');
@@ -154,6 +197,17 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
       config.primevue = { unstyled: use.unstyled ?? false, ...(ptFile ? { pt: relPosix(root, ptFile) } : {}) };
       detected.push('primevue');
     }
+    // app.component('s-button', SButton): the identifier's import says where it comes from
+    if (needs('components')) {
+      for (const r of entryComponents(source)) {
+        const spec = imports.find((i) => i.name === r.ident)?.spec;
+        if (spec) components[r.name] = componentRef(spec, entry);
+      }
+    }
+  }
+  if (Object.keys(components).length) {
+    config.components = components;
+    detected.push('components');
   }
 
   // PrimeVue is a dependency but the entry did not show how it is installed: install it with
@@ -166,6 +220,15 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
     deps.push(manifest);
   }
   return { config, aliases, detected, deps };
+}
+
+/** The file's text, or null when it cannot be read (missing, a directory). */
+function readIfExists(file: string): string | null {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 function dependsOn(manifest: string, name: string): boolean {

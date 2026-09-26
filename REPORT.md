@@ -24,6 +24,7 @@
 | V7 node_modules が無いときの依存キャッシュ | **成立** | ロックファイルから埋め込みの bun で入れ、`NODE_PATH` 付きで起動し直す。Windows 版でも描けた |
 | V8 設定ファイルが無いプロジェクト | **成立** | 書かれていないキーをエントリ（`src/main.ts`）の静的な読み取りで補う。PrimeVue を入れ忘れて真っ白になるのを防ぐ |
 | V9 vite.config にしか無い alias | **成立** | tsconfig に `paths` が無ければ、vite.config の `resolve.alias` をテキストとして読む |
+| V10 グローバル登録と自動 import の子コンポーネント | **成立** | エントリの `app.component(...)` と `components.d.ts` から、タグ名と定義元の対応を作る |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -376,6 +377,32 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V10: グローバル登録と自動 import の子コンポーネント
+
+検証日: 2026-09-26（V8 と同じ業務アプリ）
+
+**結果: 成立**（タグ名と定義元の対応 `components` を、エントリの `app.component(...)` と `components.d.ts` から作る）
+
+### きっかけ
+- 業務アプリは、PrimeVue のコンポーネントを `app.component('pv-dialog', Dialog)` のように接頭辞付きの名前で登録し、プロジェクトのコンポーネントも `app.component('s-button', SButton)` で登録していました。
+- 子コンポーネントはどれも import せずに使うので、V3 の解決（import を辿る）に載りません。未登録のタグの探索（`primevue/<name>`）でも `pv-dialog` は `primevue/pvdialog` になり、見つかりません。その結果、ダイアログやボタンが破線の箱（スタブ）になっていました。
+
+### 根拠
+- エントリの `app.component('名前', 識別子)` を読み、識別子の default import の元を辿りました。プロジェクトの SFC（alias 経由を含む）ならその SFC を、パッケージならその default export を使います。
+- 自動 import（unplugin-vue-components / Nuxt）は、生成される `components.d.ts` に `Name: typeof import('...')['default']` の形で定義元が書かれているので、同じ対応に入れました。
+- e2e では、`main.ts` でグローバル登録した SFC（`<app-badge>`）とパッケージのコンポーネント（`<pv-tag>`）を、設定ファイルの有無どちらでもスタブ無し、警告 0 件で描けました。
+- 業務アプリのダイアログ（`pv-dialog`、`s-button`、`s-radio` などを使う）も、スタブが 0 件になりました。
+
+### 仕様として決めたこと
+- タグ名は PascalCase にそろえて引きます（`pv-button` と `PvButton` は同じ）。
+- 探す順は `componentDirs`、`components`、`primevue/<name>` です。
+- `app.component(Comp.name, Comp)` のように名前を式で渡すものと、ループで登録するものは読みません。そのときは設定の `components` に書いてもらいます。
+- 推測に使った `components.d.ts` は、エントリが 0 件でも `deps` に入れます（開発サーバーが後から書き足すため）。
+- 推測の段階ではファイルの有無を確かめません。Nuxt の `components.d.ts` は数百件あり、描画のたびに全件を確かめると固定費になるためです。タグを解決するときに、使われたものだけを通常の import と同じ経路で解決します。SFC でないもの（`.tsx` など）はプレースホルダ、見つからないものは理由付きのスタブになります。
+- PrimeVue の `primevue/<name>` を探す決め打ちは残しています。`components` の仕組みに寄せて一般化するのは、次の候補です。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -399,6 +426,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `deps-cache.ts`: V7
   - `detect-config.ts`: V8
   - `detect-config.ts`（`viteAliases`）/ `text-scan.ts`: V9
+  - `detect-config.ts`（`entryComponents` / `dtsComponents`）/ `resolve-components.ts`（`resolveGlobalTag`）: V10
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3

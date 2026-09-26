@@ -83,6 +83,7 @@ vue-preview --version
 | `primevue.pt` | pt 定義モジュール（default export）。TS のまま import する |
 | `primevue.portal` | `teleport` / `inline` / `off`。`--portal` で上書きできる |
 | `componentDirs` | import されていないタグ名を `<dir>/<PascalName>.vue` から探す |
+| `components` | グローバル登録や自動 import のコンポーネント。タグ名から、`./` で始まるルート相対の SFC か、パッケージ（`primevue/dialog`、名前付き export は `pkg#Name`）への対応。PascalCase にそろえて引く（`pv-button` と `PvButton` は同じ） |
 | `placeholderIterations` | プレースホルダを反復したときの要素数 |
 | `maxDepth` | 子コンポーネント解決の深さの上限 |
 
@@ -97,6 +98,7 @@ vue-preview --version
 | `globalCss` | エントリが副作用で import している `.css`（`import './style.css'`）を、並び順のまま |
 | `tailwind.entry` | そのうち `@import "tailwindcss"` を含むローカルの CSS |
 | `primevue` | エントリの `app.use(<primevue/config の import>, { ... })` から `unstyled` と `pt`。`pt` はその識別子の import 元のファイル（`index.js` などを補う。`{ pt }` の省略記法も読む）。エントリに無くても、package.json の依存に `primevue` があれば PrimeVue 本来の既定（`unstyled: false`）で入れる。入れないと、PrimeVue のコンポーネントが `$primevue` を読んで落ちる |
+| `components` | `components.d.ts`（ルート、`src/`、`types/`、`.nuxt/` の下。unplugin-vue-components と Nuxt が生成する）の `Name: typeof import('...')['default']` と、エントリの `app.component('name', 識別子)`（識別子の import 元を辿る）。両方にあればエントリが優先 |
 
 - エントリの相対 import と、alias（`aliases` か tsconfig の `paths`）経由の import を解決します。
 - 読んだエントリは、何も推測できなかったときも `deps` に入ります（`app.use(PrimeVue, ...)` や CSS の import を足したら描き直せるように）。依存から PrimeVue を入れたときは `package.json` も入ります。推測したキーは `--json` の `config.detected` に出ます。
@@ -165,8 +167,9 @@ cli.ts
 - プロジェクト内の `.ts` / `.js` は実行せず、プレースホルダにして warning を出す。
 - import されていないタグは、次の順に探す。
   1. `componentDirs`
-  2. `primevue/<name>`
-  3. どちらにもなければスタブ
+  2. `components`（グローバル登録と自動 import。REPORT V10）
+  3. `primevue/<name>`
+  4. どれにもなければスタブ
 - 循環参照と深さの上限超過はスタブにして、warning に記録する。
 - スタブは `data-vp-stub="<Name>"` を持つ破線の箱として描画し、既定 slot の中身も表示する。
 
