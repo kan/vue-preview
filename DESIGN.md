@@ -10,7 +10,7 @@ Vue SFC を受け取り、簡易レンダリングした「CSS インライン�
   - `--compile-autoload-package-json` が必須です。これがないと、実行時にプロジェクトの node_modules のネストした依存を解決できません（REPORT V1）。
 - ツールは **ユーザーの `<script>` / `<script setup>` を実行しない**。テンプレートだけを render 関数にコンパイルし、値は fixture とプレースホルダから供給する。
 - `vue` / `@vue/compiler-sfc` / `@vue/server-renderer` / `primevue` / `@tailwindcss/node` などのライブラリは、**対象プロジェクトの node_modules から実行時に読み込む**。Vue の二重インスタンスを避けるためです。
-  - 実行してよいのは、ライブラリと PrimeVue の pt 定義ファイルだけです。
+  - 実行してよいのは、ライブラリと PrimeVue の pt 定義ファイル、i18n のメッセージファイル（REPORT V13）だけです。
   - プロジェクトで `vue` を解決できないときは、**ロックファイルどおりの依存を依存キャッシュへ入れて、そこから読み込む**（後述。REPORT V7）。
 - SSR（`renderToString`）で HTML を生成し、次の CSS をすべてインライン化した 1 枚 HTML を出す。
   - scoped CSS
@@ -29,7 +29,7 @@ Vue SFC を受け取り、簡易レンダリングした「CSS インライン�
 
 ```
 vue-preview render <path> [--root <dir>] [--fixture <file>] [--json] [--out <file>]
-                          [--portal teleport|inline|off] [--timings]
+                          [--portal teleport|inline|off] [--locale <locale>] [--timings]
 vue-preview --version
 ```
 
@@ -68,6 +68,7 @@ vue-preview --version
 - 依存キャッシュを初めて作るときは、その旨を stderr に 1 行出す（stdout は出力専用）。
 - 依存を用意できないとき（ロックファイルが無い、workspaces、install の失敗）は、理由を stderr に出して終了コード 1 で終わる。
 - `--portal`: PrimeVue の Portal の扱い（後述）。既定は `teleport`。
+- `--locale`: i18n のロケール（後述）。設定の `i18n.locale` より優先する。
 - `--timings`: 計測値を stderr に出す。
 
 ## 設定ファイル `vue-preview.config.json`（ルート直下）
@@ -93,6 +94,8 @@ vue-preview --version
 | `primevue.portal` | `teleport` / `inline` / `off`。`--portal` で上書きできる |
 | `componentDirs` | import されていないタグ名を `<dir>/<PascalName>.vue` から探す |
 | `components` | グローバル登録や自動 import のコンポーネント。タグ名から、`./` で始まるルート相対の SFC か、パッケージ（`primevue/dialog`、名前付き export は `pkg#Name`）への対応。PascalCase にそろえて引く（`pv-button` と `PvButton` は同じ） |
+| `i18n.messages` | メッセージファイルのルート相対パス。`{locale}` をロケール名に置き換える（`src/i18n/{locale}.ts`）。拡張子を書かない（`src/i18n/{locale}`）と、`.json` / `.ts` / `.js` / `.mjs` の順にあるものを使う。省略すると `i18n` が無いときと同じく探す。JSON はそのまま、`.ts` / `.js` は import して default export、ロケール名の export、唯一の export の順に取る |
+| `i18n.locale` | 使うロケール。省略時は `ja`。`--locale` で上書きできる |
 | `placeholderIterations` | プレースホルダを反復したときの要素数 |
 | `maxDepth` | 子コンポーネント解決の深さの上限 |
 
@@ -108,6 +111,7 @@ vue-preview --version
 | `tailwind.entry` | そのうち `@import "tailwindcss"` を含むローカルの CSS |
 | `primevue` | エントリの `app.use(<primevue/config の import>, { ... })` から `unstyled` と `pt`。`pt` はその識別子の import 元のファイル（`index.js` などを補う。`{ pt }` の省略記法も読む）。エントリに無くても、package.json の依存に `primevue` があれば PrimeVue 本来の既定（`unstyled: false`）で入れる。入れないと、PrimeVue のコンポーネントが `$primevue` を読んで落ちる |
 | `components` | `components.d.ts`（ルート、`src/`、`types/`、`.nuxt/` の下。unplugin-vue-components と Nuxt が生成する）の `Name: typeof import('...')['default']` と、エントリの `app.component('name', 識別子)`（識別子の import 元を辿る）。両方にあればエントリが優先 |
+| `i18n` | `src/i18n` / `src/locales` / `src/locale` / `src/lang` / `src/langs` のうち、ロケール名（`ja`、`pt-BR` など）の `.json` / `.ts` / `.js` / `.mjs` がある最初のディレクトリ。`locale` は `ja`、`en`、最初に見つかったものの順（REPORT V13） |
 
 - エントリの相対 import と、alias（`aliases` か tsconfig の `paths`）経由の import を解決します。
 - 読んだエントリは、何も推測できなかったときも `deps` に入ります（`app.use(PrimeVue, ...)` や CSS の import を足したら描き直せるように）。依存から PrimeVue を入れたときは `package.json` も入ります。推測したキーは `--json` の `config.detected` に出ます。
@@ -159,6 +163,8 @@ cli.ts
 4. `defineProps` / `defineModel` のデフォルト値（リテラルのみ）。Boolean 型でデフォルトがない場合は `false`
 5. 静的に評価できるリテラルの初期値（`ref(false)`、`const labels = { ... }`）
 6. プレースホルダ
+
+`useI18n()` から受け取った名前（`compile.ts` が分割代入を静的に読む）は、2 の後で `t` / `locale` / `{ t, locale }` に解決する。fixture で与える値ではないので `inputs` に出さない。テンプレートの `$t` はアプリのグローバルプロパティに入れる（`i18n.ts`、REPORT V13）。
 
 ### プレースホルダ（`placeholder.ts`）
 

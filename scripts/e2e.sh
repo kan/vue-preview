@@ -13,13 +13,17 @@ for c in \
   src/components/edge/PlaceholderDemo.vue \
   src/components/edge/CircularA.vue \
   src/components/edge/Unresolved.vue \
-  src/components/edge/GlobalRegistered.vue
+  src/components/edge/GlobalRegistered.vue \
+  src/components/edge/I18nDemo.vue
 do
   name=$(basename "$c" .vue)
   docker compose exec -T app "$BIN" render "$c" --root /app --json --out "/out/$name.json"
   docker compose exec -T app "$BIN" render "$c" --root /app --out "/out/$name.html"
   echo "rendered $c"
 done
+# messages of another locale (REPORT V13)
+docker compose exec -T app "$BIN" render src/components/edge/I18nDemo.vue --root /app --locale en --json --out /out/I18nDemo-en.json
+echo "rendered src/components/edge/I18nDemo.vue (--locale en)"
 # fixture-app without vue-preview.config.json: the config is inferred from src/main.ts (REPORT V8)
 docker compose exec -T app sh -c 'rm -rf /tmp/noconfig && mkdir /tmp/noconfig && for f in src node_modules package.json package-lock.json tsconfig.json; do ln -s /app/$f /tmp/noconfig/$f; done'
 for c in src/components/UserPage.vue src/components/UserTable.vue src/components/edge/GlobalRegistered.vue; do

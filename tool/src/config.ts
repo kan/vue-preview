@@ -14,6 +14,12 @@ export interface Config {
    * package specifier (`primevue/dialog`, `pkg#NamedExport`). Looked up by PascalCase name.
    */
   components?: Record<string, string>;
+  /**
+   * Messages for `$t` / `useI18n().t` (REPORT V13): `messages` is a root-relative path where
+   * `{locale}` stands for the locale (`src/i18n/{locale}.ts`; without an extension, each locale's
+   * own is found), found like an absent `i18n` when left out; `--locale` overrides `locale`.
+   */
+  i18n?: { locale?: string; messages?: string } | null;
   placeholderIterations?: number;
   maxDepth?: number;
 }

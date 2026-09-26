@@ -38,6 +38,11 @@ export interface CompiledSfc {
   literals: Record<string, unknown>;
   /** Names received from a call other than a reactivity API (`const { t } = useI18n()`). */
   fromCalls: Set<string>;
+  /**
+   * Names received from `useI18n()` (vue-i18n or a project's own): `const { t, locale: l } = useI18n()`
+   * gives `{ t: 't', l: 'locale' }`, `const i18n = useI18n()` gives `{ i18n: 'object' }` (REPORT V13).
+   */
+  i18nBindings: Record<string, 't' | 'locale' | 'object'>;
   /** component tags used in the template */
   templateComponents: string[];
   styles: { css: string; scoped: boolean }[];
@@ -68,6 +73,7 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
   const propsObjectNames: string[] = [];
   const literals: Record<string, unknown> = {};
   const fromCalls = new Set<string>();
+  const i18nBindings: CompiledSfc['i18nBindings'] = {};
 
   if (descriptor.script || descriptor.scriptSetup) {
     const script = sfc.compileScript(descriptor, {
@@ -91,7 +97,7 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
     const analysed = analyseGenerated(sfc, script.content, rel, warnings);
     props = analysed.props;
     emits = analysed.emits;
-    const out = { propAliases, propsObjectNames, literals, fromCalls };
+    const out = { propAliases, propsObjectNames, literals, fromCalls, i18nBindings };
     if (script.scriptSetupAst) analyseSetup(script.scriptSetupAst as any[], out);
     if (script.scriptAst) analyseSetup(script.scriptAst as any[], out);
   }
@@ -160,6 +166,7 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
     propsObjectNames,
     literals,
     fromCalls,
+    i18nBindings,
     templateComponents: [...templateComponents],
     styles,
     warnings,
@@ -445,7 +452,20 @@ function patternNames(id: any): string[] {
 }
 
 /** What `analyseSetup` collects from `<script setup>` / `<script>` (fields of `CompiledSfc`). */
-type SetupAnalysis = Pick<CompiledSfc, 'propAliases' | 'propsObjectNames' | 'literals' | 'fromCalls'>;
+type SetupAnalysis = Pick<CompiledSfc, 'propAliases' | 'propsObjectNames' | 'literals' | 'fromCalls' | 'i18nBindings'>;
+
+/** What `const <id> = useI18n()` binds: the `t` / `locale` members, or the whole object. */
+function i18nNames(id: any): CompiledSfc['i18nBindings'] {
+  if (id?.type === 'Identifier') return { [id.name]: 'object' };
+  const out: CompiledSfc['i18nBindings'] = {};
+  if (id?.type !== 'ObjectPattern') return out;
+  for (const p of id.properties) {
+    const key = p.type === 'ObjectProperty' && p.key.type === 'Identifier' ? p.key.name : undefined;
+    const [local] = patternNames(p.value);
+    if (local && (key === 't' || key === 'locale')) out[local] = key;
+  }
+  return out;
+}
 
 function analyseSetup(body: any[], out: SetupAnalysis) {
   for (const stmt of body) {
@@ -458,6 +478,7 @@ function analyseSetup(body: any[], out: SetupAnalysis) {
       // received from a call (`const { t } = useI18n()`, `const store = useStore()`, `await fetchX()`):
       // functions and stores a fixture can hardly give (REPORT V12)
       if (init.type === 'CallExpression' && !STATE_CALLS.has(callee ?? '')) patternNames(d.id).forEach((n) => out.fromCalls.add(n));
+      if (callee === 'useI18n') Object.assign(out.i18nBindings, i18nNames(d.id));
       if (d.id.type !== 'Identifier') continue;
       const local = d.id.name;
       if (callee === 'defineProps' || (callee === 'withDefaults' && calleeName(init.arguments[0]) === 'defineProps')) {

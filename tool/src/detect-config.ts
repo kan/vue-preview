@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { aliasesFromTsconfig, type Config, firstFile, projectPath, readJson, resolveAliases } from './config';
+import { findMessageFiles, pickLocale } from './i18n';
 import { relPosix } from './load-project-modules';
 import { balancedBlock, objectEntry, splitTopLevel, stripComments, unquote } from './text-scan';
 
@@ -141,7 +142,20 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
   const aliases = resolveAliases(root, config);
 
   // only keys that are absent: `null` in the config means "explicitly off"
-  const needs = (key: 'globalCss' | 'tailwind' | 'primevue' | 'components') => config[key] === undefined;
+  const needs = (key: 'globalCss' | 'tailwind' | 'primevue' | 'components' | 'i18n') => config[key] === undefined;
+
+  // i18n messages in the usual places (`src/i18n/ja.ts`, `src/locales/en.json`): REPORT V13.
+  // A config that gives only `locale` still has its messages found.
+  if (needs('i18n') || (config.i18n && !config.i18n.messages)) {
+    const files = findMessageFiles(root);
+    const locale = pickLocale(Object.keys(files), config.i18n?.locale);
+    if (locale) {
+      // no extension: each locale's own is found when it is read (`messageFile`)
+      config.i18n = { locale, ...config.i18n, messages: `${path.posix.dirname(files[locale])}/{locale}` };
+      detected.push('i18n');
+    }
+  }
+
   const components: Record<string, string> = {};
   /**
    * The config `components` value for an import: `./root-relative` for a project file, else the

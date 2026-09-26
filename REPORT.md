@@ -27,6 +27,7 @@
 | V10 グローバル登録と自動 import の子コンポーネント | **成立** | エントリの `app.component(...)` と `components.d.ts` から、タグ名と定義元の対応を作る |
 | V11 プレースホルダの表示 | **成立** | 参照式の末尾だけを表示し、全体はホバー（`title`）で出す |
 | V12 fixture で与えられる値の一覧 | **成立** | `--json` の `inputs` に、ルートの props と、描画中にテンプレートが参照した値を出す |
+| V13 i18n の簡易対応 | **成立** | `src/i18n/ja.ts` などのメッセージファイルを読み、`$t('key')` と `useI18n()` の `t` を訳す |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -455,6 +456,35 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V13: i18n の簡易対応
+
+検証日: 2026-09-26（pike と、vue-i18n を使う別の業務アプリ）
+
+**結果: 成立**（メッセージファイルを読み、`$t('key')` と `useI18n()` から受け取った `t` を訳す）
+
+### きっかけ
+- i18n を使うコンポーネントは、文言がすべて `{{ t }}` などのプレースホルダになり、画面の見た目を確かめられませんでした。V12 の `inputs` にも `t` が並び、値を入れる欄として意味がありませんでした。
+- 対象は 2 通りあります。pike の自前実装（`src/i18n/ja.ts` の default export と `useI18n()` が返す `t`）と、vue-i18n（`src/i18n/ja.js` の `export const ja` と、テンプレートの `$t`）です。
+
+### 方式
+- プラグインは再現せず、メッセージだけを読みます。`src/i18n` / `src/locales` / `src/locale` / `src/lang` / `src/langs` のうち、ロケール名のファイル（`ja.ts`、`en.json`、`pt-BR.js` など。`index.js` は対象外）がある最初のディレクトリを使います。
+- ロケールは `--locale`、設定の `i18n.locale`、`ja`、`en`、最初に見つかったもの、の順で決めます。日本語を優先するのは、利用者の画面が日本語だからです。
+- **メッセージのモジュール（`.ts` / `.js`）は import して実行します。** pt 定義ファイル（V4）と同じ扱いの例外です。中身は文字列のオブジェクトなのが普通で、JSON に限ると `.ts` で書く pike も `.js` で書く vue-i18n の業務アプリも読めないためです。値は default export、ロケール名の export、唯一の export の順で取ります。
+- `$t` はアプリのグローバルプロパティに入れます。`useI18n()` は script を実行しないので、分割代入の名前（`const { t, locale: l } = useI18n()`）を静的に読み、ctx Proxy が `t` / `locale` / オブジェクトを返します。これらは `inputs` に出ません。
+- キーは入れ子のパス（`menu.open`）、次にフラットなキー（`'menu.open': ...`）の順で引きます。`{name}` と `{0}` を埋めます。見つからないキーは、vue-i18n と同じくキーそのものを表示します。
+- 数を渡した呼び出し（`t('apples', 3)`）は、vue-i18n と同じ規則で `|` の分岐を選び、`{n}` と `{count}` を埋めます。日時や数値の書式と、`<i18n>` ブロックは扱いません。
+- 検出した設定のパスは拡張子を持たない形（`src/i18n/{locale}`）にし、読むときにロケールごとの拡張子を探します。同じディレクトリでロケールごとに拡張子が違っても（`ja.ts` と `en.json`）、`--locale` で切り替えられます。
+
+### 根拠
+- e2e では、名前付き export の `ja.ts` と default export の `en.ts` を置いて、次を確かめました。
+  - `$t` の埋め込み、入れ子とフラットのキー、見つからないキー
+  - `--locale en` で英語になること
+  - `inputs` に `t` が出ないこと
+- pike の ProjectSwitcher は、検索欄の placeholder が「プロジェクトを検索...」になり、`inputs` から `t` が消えました。
+- vue-i18n の業務アプリでは、`$t('select')` が「選択」になりました。`deps` には `src/i18n/ja.js` が入ります。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -465,7 +495,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - プレースホルダをキーにしたオブジェクト参照（`labels[status]`）は `undefined` になります。
   - `===` による比較は常に false になるので、`v-if="mode === 'edit'"` は v-else 側に倒れます。
 - `<style lang="scss">` などのプリプロセッサは未対応です（warning でスキップ）。`transformAssetUrls` を無効にしているので、画像も表示されません。
-- `main.ts` の `app.use()` / `app.component()` / `app.provide()` は再現しません。PrimeVue 以外のプラグイン（i18n、router、pinia）を使うテンプレートは、`$t` などがプレースホルダになります。設定でプラグインの「プレビュー用初期化モジュール」を指定できるようにする案が考えられます。
+- `main.ts` の `app.use()` / `app.provide()` は再現しません。PrimeVue 以外のプラグイン（router、pinia）を使うテンプレートは、`$route` などがプレースホルダか描画エラーになります。i18n はメッセージだけを読む簡易対応（V13）です。設定でプラグインの「プレビュー用初期化モジュール」を指定できるようにする案が考えられます。
 - Portal へのパッチは PrimeVue の内部実装（`data.mounted` / `computed.inline`）に依存します。PrimeVue の更新で壊れる可能性があるので、バージョンを固定するか、壊れたことを検知する仕組みが必要です。
 - 出力を小さくするなら、`data-pc-*` 属性とハイドレーション用コメントの除去、primeicons の未使用グリフのサブセット化が効きます。
 - ツールは dev ビルドの Vue を使います。prop の型警告などが `warnings` に入るのは利点ですが、プレースホルダ起因の型警告はノイズになり得ます。
@@ -481,6 +511,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `detect-config.ts`（`entryComponents` / `dtsComponents`）/ `resolve-components.ts`（`resolveGlobalTag`）: V10
   - `placeholder.ts`（`decoratePlaceholders`）: V11
   - `ctx-proxy.ts`（`onInput`）/ `cli.ts`（`rootInputs`）: V12
+  - `i18n.ts` / `compile.ts`（`i18nNames`）: V13
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3

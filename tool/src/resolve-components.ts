@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { firstFile, projectPath } from './config';
+import type { I18n } from './i18n';
 import type { ProjectModules } from './load-project-modules';
 import { compileSfc, type CompiledSfc, UNKNOWN } from './compile';
 import { createCtxProxy } from './ctx-proxy';
@@ -14,6 +15,8 @@ export interface ResolveOptions {
   components: Record<string, string>;
   maxDepth: number;
   placeholder: PlaceholderOptions;
+  /** The project's messages for `useI18n()` names, or null (REPORT V13). */
+  i18n: I18n | null;
 }
 
 const BUILTIN_TAGS = new Set(['Transition', 'TransitionGroup', 'KeepAlive', 'Teleport', 'Suspense', 'component', 'slot', 'template']);
@@ -135,7 +138,7 @@ export class ComponentGraph {
       setup() {
         const instance = graph.mods.vue.getCurrentInstance();
         const inputs = root ? graph.rootInputs : undefined;
-        return createCtxProxy({ sfc: sfc!, instance, imports, fixture, placeholder, inputs });
+        return createCtxProxy({ sfc: sfc!, instance, imports, fixture, placeholder, inputs, i18n: graph.opts.i18n });
       },
       render: sfc.render,
     };

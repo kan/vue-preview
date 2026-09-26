@@ -3,6 +3,7 @@
 import { createPlaceholder, type PlaceholderOptions } from './placeholder';
 import type { CompiledSfc } from './compile';
 import { UNKNOWN } from './compile';
+import type { I18n } from './i18n';
 
 export interface CtxSources {
   sfc: CompiledSfc;
@@ -15,6 +16,8 @@ export interface CtxSources {
    * root component's inputs besides its props (REPORT V12). Only given for the root.
    */
   inputs?: Set<string>;
+  /** The project's messages, for names received from `useI18n()` (REPORT V13). */
+  i18n?: I18n | null;
 }
 
 const hyphenate = (s: string) => s.replace(/\B([A-Z])/g, '-$1').toLowerCase();
@@ -63,6 +66,9 @@ export function createCtxProxy(src: CtxSources) {
     if (sfc.propsObjectNames.includes(key)) return getPropsObject(key);
     // 2. resolved imports (child components, library values)
     if (key in imports) return imports[key];
+    // received from useI18n(): translate with the project's messages (not an input to fill in)
+    const i18nKind = sfc.i18nBindings[key];
+    if (i18nKind && src.i18n) return i18nKind === 'object' ? src.i18n : src.i18n[i18nKind];
     if (propName) return resolveProp(propName, key);
     src.inputs?.add(key);
     // 3. fixture

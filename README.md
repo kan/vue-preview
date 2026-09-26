@@ -58,6 +58,7 @@ vue-preview render src/components/UserPage.vue --root /app --json --out UserPage
 | `--json` | `{ html, deps, warnings, modules, inputs, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧 |
 | `--out <file>` | stdout の代わりにファイルへ書き出す |
 | `--portal teleport\|inline\|off` | PrimeVue の Dialog などの描画方法（既定 `teleport`） |
+| `--locale <locale>` | i18n のメッセージに使うロケール（既定 `ja`） |
 
 ### fixture
 
@@ -98,6 +99,7 @@ fixture にない値は、次の順で補われます。
 - `tailwind`：そのうち `@import "tailwindcss"` を含むもの
 - `primevue`：`app.use(PrimeVue, { unstyled, pt })` の指定。依存に primevue があれば、エントリに無くても PrimeVue の既定（`unstyled: false`）で入れる
 - `components`：`app.component('s-button', SButton)` のようなグローバル登録と、自動 import の `components.d.ts`。どちらも import せずに使う子コンポーネントを描くために使う
+- `i18n`：`src/i18n/ja.ts` や `src/locales/en.json` のような、ロケール名のメッセージファイル。見つかれば、テンプレートの `$t('key')` と `useI18n()` の `t` をそのメッセージで訳す。既定は日本語で、`--locale` で変えられる。`.ts` / `.js` のメッセージファイルは import して実行する
 
 推測で足りないとき（`pt` をエントリの外で組み立てている、など）は、そのキーだけを設定ファイルに書いてください。
 
@@ -116,7 +118,7 @@ node_modules がコンテナの中にしか無いプロジェクトも、ホス�
 主なものを挙げます。詳細は [REPORT.md](REPORT.md#既知の制約提案スコープ外のため記録のみ) を参照してください。
 
 - computed や関数の結果、`onMounted` で取得するデータは、fixture で与えない限りプレースホルダになります。
-- `main.ts` の `app.use()` は再現しません。PrimeVue 以外のプラグイン（i18n、router、pinia など）には未対応です。
+- `main.ts` の `app.use()` は再現しません。PrimeVue 以外のプラグイン（router、pinia など）には未対応です。i18n はメッセージを引くだけの簡易対応で、日時や数値の書式は扱いません。
 - `<style lang="scss">` などのプリプロセッサと、画像アセットには未対応です。
 - 自分自身を import する再帰コンポーネントは、循環参照としてスタブ表示になります。
 

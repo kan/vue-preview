@@ -117,12 +117,36 @@ describe('globally registered components (app.component in src/main.ts)', () => 
   }
 });
 
+describe('i18n: $t and useI18n() with the project messages (REPORT V13)', () => {
+  const text = (html: string, cls: string) => new RegExp(`class="${cls}"[^>]*>([^<]*)<`).exec(html)?.[1];
+  const ja = load('I18nDemo') as Result & { inputs: any };
+  const en = load('I18nDemo-en');
+  test('messages are found in src/locales, Japanese first', () => {
+    expect(ja.config.detected).toContain('i18n');
+    expect(ja.deps).toContain('src/locales/ja.ts');
+    expect(ja.warnings).toEqual([]);
+  });
+  test('named interpolation, nested and flat keys; a missing key shows the key', () => {
+    expect(text(ja.html, 'greeting')).toBe('こんにちは、Pike さん');
+    expect(text(ja.html, 'nested')).toBe('開く');
+    expect(text(ja.html, 'flat')).toBe('フラットなキー');
+    expect(text(ja.html, 'missing')).toBe('no.such.key');
+    expect(text(ja.html, 'locale')).toBe('ja');
+  });
+  test('--locale picks another file (a default export)', () => {
+    expect(text(en.html, 'greeting')).toBe('Hello, Pike');
+    expect(text(en.html, 'locale')).toBe('en');
+    expect(en.deps).toContain('src/locales/en.ts');
+  });
+  test('names from useI18n() are not inputs', () => expect(ja.inputs.values).toEqual([]));
+});
+
 describe('inferred config (no vue-preview.config.json)', () => {
   for (const name of ['UserPage', 'UserTable']) {
     const r = load(`noconfig-${name}`);
     const explicit = load(name);
     test(`${name}: settings are read from src/main.ts`, () => {
-      expect(r.config).toEqual({ file: null, detected: ['globalCss', 'tailwind', 'primevue', 'components'] });
+      expect(r.config).toEqual({ file: null, detected: ['i18n', 'globalCss', 'tailwind', 'primevue', 'components'] });
       expect(r.deps).toContain('src/main.ts');
     });
     test(`${name}: renders like the explicit config`, () => {

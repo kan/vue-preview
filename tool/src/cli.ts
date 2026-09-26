@@ -11,11 +11,12 @@ import { buildTailwind, inlineUrls, resolveCssEntry } from './css';
 import { buildHtml } from './html';
 import { loadConfig, readJson } from './config';
 import { completeConfig } from './detect-config';
+import { createI18n, type I18n, loadMessages, messageFile } from './i18n';
 
 declare const VUE_PREVIEW_VERSION: string;
 const VERSION = typeof VUE_PREVIEW_VERSION === 'string' ? VUE_PREVIEW_VERSION : 'dev';
 
-const USAGE = 'usage: vue-preview --version | vue-preview render <path> --root <dir> [--fixture <file>] [--json] [--out <file>] [--portal teleport|inline|off]';
+const USAGE = 'usage: vue-preview --version | vue-preview render <path> --root <dir> [--fixture <file>] [--json] [--out <file>] [--portal teleport|inline|off] [--locale <locale>]';
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -27,6 +28,7 @@ async function main() {
       json: { type: 'boolean', default: false },
       out: { type: 'string' },
       portal: { type: 'string' },
+      locale: { type: 'string' },
       timings: { type: 'boolean', default: false },
       version: { type: 'boolean', short: 'v', default: false },
     },
@@ -108,12 +110,25 @@ async function main() {
   } else if (values.fixture) {
     warn(`fixture not found: ${values.fixture}`);
   }
+  // i18n messages (REPORT V13): --locale > config locale > ja
+  let i18n: I18n | null = null;
+  if (config.i18n?.messages) {
+    const locale = values.locale ?? config.i18n.locale ?? 'ja';
+    const file = messageFile(root, config.i18n.messages, locale);
+    try {
+      i18n = createI18n(locale, await loadMessages(file, locale));
+      addDep(file);
+    } catch (e) {
+      warn(`i18n messages for '${locale}' not loaded (${relPosix(root, file)}): ${(e as Error).message.split('\n')[0]}`);
+    }
+  }
   const graph = new ComponentGraph(mods, {
     aliases,
     componentDirs: (config.componentDirs ?? []).map((d) => path.resolve(root, d)),
     components: config.components ?? {},
     maxDepth: config.maxDepth ?? 20,
     placeholder: { iterations: config.placeholderIterations ?? 3 },
+    i18n,
   });
   const rootDef = await graph.build(entry, [], { fixture });
   lap('compile', t);
@@ -125,6 +140,8 @@ async function main() {
   const app = vue.createSSRApp(rootDef);
   app.config.warnHandler = (msg: string, _i: unknown, trace: string) => warn(`vue: ${msg}${trace ? ' ' + trace.trim().split('\n')[0] : ''}`);
   app.config.errorHandler = (err: unknown, _i: unknown, info: string) => warn(`vue error (${info}): ${(err as Error)?.stack?.split('\n').slice(0, 2).join(' | ') ?? err}`);
+  // `$t('key')` in templates (vue-i18n's global property)
+  if (i18n) app.config.globalProperties.$t = i18n.t;
   if (primevue) {
     app.use(primevue, { unstyled: config.primevue?.unstyled ?? true, pt });
     const portalMode = (values.portal as string) ?? config.primevue?.portal ?? 'teleport';
