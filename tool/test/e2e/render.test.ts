@@ -88,6 +88,22 @@ describe('edge cases', () => {
   });
 });
 
+describe('inputs: what a fixture can give the root component (REPORT V12)', () => {
+  test('props with declared types, and the other identifiers the template used (not local functions)', () => {
+    const r = load('PlaceholderDemo') as Result & { inputs: any };
+    expect(r.inputs.props).toEqual([
+      { name: 'order', types: ['Object'] },
+      { name: 'showNote', types: ['Boolean'] },
+    ]);
+    expect(r.inputs.values.map((v: { name: string }) => v.name)).toEqual(['mode']);
+    expect(r.inputs.fixture).toBeNull();
+  });
+  test('the fixture in use', () => {
+    const r = load('UserTable') as Result & { inputs: any };
+    expect(r.inputs.fixture).toBe('src/components/UserTable.preview.json');
+  });
+});
+
 describe('globally registered components (app.component in src/main.ts)', () => {
   for (const name of ['GlobalRegistered', 'noconfig-GlobalRegistered']) {
     const r = load(name);

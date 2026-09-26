@@ -99,8 +99,11 @@ async function main() {
     ? path.resolve(root, values.fixture)
     : entry.replace(/\.vue$/, '.preview.json');
   let fixture: Record<string, unknown> = {};
+  /** The fixture in use, root-relative (`../` when it lives outside the root), for `inputs`. */
+  let fixtureRel: string | null = null;
   if (fs.existsSync(fixtureFile)) {
     fixture = readJson(fixtureFile);
+    fixtureRel = relPosix(root, fixtureFile);
     addDep(fixtureFile);
   } else if (values.fixture) {
     warn(`fixture not found: ${values.fixture}`);
@@ -112,7 +115,7 @@ async function main() {
     maxDepth: config.maxDepth ?? 20,
     placeholder: { iterations: config.placeholderIterations ?? 3 },
   });
-  const rootDef = await graph.build(entry, [], fixture);
+  const rootDef = await graph.build(entry, [], { fixture });
   lap('compile', t);
   timings['compile.sfc'] = Math.round(graph.time.sfcCompile * 10) / 10;
   timings['compile.packageImport'] = Math.round(graph.time.packageImport * 10) / 10;
@@ -188,7 +191,21 @@ async function main() {
 
   if (values.timings) console.error(JSON.stringify({ timings, tailwind: tailwindInfo, resolved: mods.resolved }));
   const output = values.json
-    ? JSON.stringify({ html, deps: [...deps].sort(), warnings, modules: mods.source, config: { file: configFile ? relPosix(root, configFile) : null, detected }, timings, tailwind: tailwindInfo, resolved: mods.resolved }, null, 2)
+    ? JSON.stringify(
+        {
+          html,
+          deps: [...deps].sort(),
+          warnings,
+          modules: mods.source,
+          config: { file: configFile ? relPosix(root, configFile) : null, detected },
+          inputs: { ...graph.inputs(entry), fixture: fixtureRel },
+          timings,
+          tailwind: tailwindInfo,
+          resolved: mods.resolved,
+        },
+        null,
+        2,
+      )
     : html;
   if (values.out) fs.writeFileSync(values.out, output);
   else process.stdout.write(output);

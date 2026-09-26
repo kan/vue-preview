@@ -47,6 +47,11 @@ vue-preview --version
     "warnings": ["..."],
     "modules": { "kind": "cache", "dir": "/root/.cache/vue-preview/deps/da28523b7762e04c" },
     "config": { "file": null, "detected": ["globalCss", "tailwind", "primevue"] },
+    "inputs": {
+      "props": [{ "name": "rows", "types": ["Array"] }, { "name": "compact", "types": ["Boolean"], "default": false }],
+      "values": [{ "name": "mode" }, { "name": "open", "default": false }],
+      "fixture": "src/components/UserTable.preview.json"
+    },
     "timings": { "loadModules": 0, "compile": 0, "ssr": 0, "css": 0, "total": 0 },
     "tailwind": { "candidates": 0, "extractor": "oxide" },
     "resolved": { "vue": "/app/node_modules/vue/index.mjs" }
@@ -55,7 +60,11 @@ vue-preview --version
 
   - `deps`: 出力に影響したファイル（SFC、CSS、pt 定義、fixture、設定）のルート相対パス。`node_modules` の中のファイル（プロジェクトのものも依存キャッシュのものも）は含めない。
   - `modules`: ライブラリの出どころ。`{ "kind": "project" }` か `{ "kind": "cache", "dir": ... }`。
-  - `html` / `deps` / `warnings` / `modules` が契約です。それ以外は PoC の計測用です。
+  - `inputs`: fixture でルートコンポーネントに与えられるもの（REPORT V12）。呼び出し側（pike）は、これから値の入力フォームを作る。
+    - `props`: 宣言された props。型と、静的に読めた既定値（`default`）。
+    - `values`: props 以外にテンプレートが参照した識別子（import を除く）。描画中に記録するので、実際に使われた順に並ぶ。静的に読めた初期値（`ref(false)` など）があれば `default`。`<script setup>` で定義した関数（`setup-const` で静的な値でないもの）は JSON で与えられないので除く。
+    - `fixture`: 使った fixture（ルート相対。ルートの外なら `../` で始まる）。無ければ null。
+  - `html` / `deps` / `warnings` / `modules` / `inputs` が契約です。それ以外は PoC の計測用です。
 - 依存キャッシュを初めて作るときは、その旨を stderr に 1 行出す（stdout は出力専用）。
 - 依存を用意できないとき（ロックファイルが無い、workspaces、install の失敗）は、理由を stderr に出して終了コード 1 で終わる。
 - `--portal`: PrimeVue の Portal の扱い（後述）。既定は `teleport`。

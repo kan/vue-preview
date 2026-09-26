@@ -26,6 +26,7 @@
 | V9 vite.config にしか無い alias | **成立** | tsconfig に `paths` が無ければ、vite.config の `resolve.alias` をテキストとして読む |
 | V10 グローバル登録と自動 import の子コンポーネント | **成立** | エントリの `app.component(...)` と `components.d.ts` から、タグ名と定義元の対応を作る |
 | V11 プレースホルダの表示 | **成立** | 参照式の末尾だけを表示し、全体はホバー（`title`）で出す |
+| V12 fixture で与えられる値の一覧 | **成立** | `--json` の `inputs` に、ルートの props と、描画中にテンプレートが参照した値を出す |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -432,6 +433,27 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V12: fixture で与えられる値の一覧
+
+検証日: 2026-09-26（V8 と同じ業務アプリ）
+
+**結果: 成立**（`--json` の `inputs` に、ルートの props と、描画中にテンプレートが参照した値を出す）
+
+### きっかけ
+- pike のプレビューで、マウント時の値（props や `onMounted` で取るデータ）を仮に埋めたいという要望がありました。fixture を手で書く前に、何を書けばよいかが分かる必要があります。
+- 業務アプリのダイアログは `modelValue` が false だと中身を描かないので、props を与えない限り何も表示されません。
+
+### 方式
+- props は、SFC の静的解析（V2）で得た宣言をそのまま出します。型と、リテラルの既定値です。
+- props 以外の値は、ルートの ctx Proxy が識別子を解決するときに記録します。import の値と props を除いた、fixture が埋められる名前です（`onInput`）。静的に読めない computed や、`onMounted` で入れる ref もここに並びます。
+- 描画中に記録するので、並ぶのは実際に参照された名前だけです。`v-if` で描かれなかった部分の名前は、条件を満たす値を与えて描き直すと現れます。
+
+### 根拠
+- e2e では、PlaceholderDemo の props（`order`、`showNote`）と値（`mode`）、UserTable が使った fixture を確かめました。
+- 業務アプリのダイアログでは、props に `modelValue` などが並び、値は空でした（ダイアログが閉じているため）。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -457,6 +479,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `detect-config.ts`（`viteAliases`）/ `text-scan.ts`: V9
   - `detect-config.ts`（`entryComponents` / `dtsComponents`）/ `resolve-components.ts`（`resolveGlobalTag`）: V10
   - `placeholder.ts`（`decoratePlaceholders`）: V11
+  - `ctx-proxy.ts`（`onInput`）/ `cli.ts`（`rootInputs`）: V12
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3

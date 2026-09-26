@@ -55,7 +55,7 @@ vue-preview render src/components/UserPage.vue --root /app --json --out UserPage
 | `<path>` | 描画する SFC（`--root` からの相対パス） |
 | `--root <dir>` | プロジェクトルート（`package.json` と `vue-preview.config.json` がある場所）。省略時はカレントディレクトリ |
 | `--fixture <file>` | fixture の JSON。省略時は `<name>.preview.json` を探し、なければプレースホルダだけで描画する |
-| `--json` | `{ html, deps, warnings, modules, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ |
+| `--json` | `{ html, deps, warnings, modules, inputs, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧 |
 | `--out <file>` | stdout の代わりにファイルへ書き出す |
 | `--portal teleport\|inline\|off` | PrimeVue の Dialog などの描画方法（既定 `teleport`） |
 

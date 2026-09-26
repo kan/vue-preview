@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { firstFile, projectPath } from './config';
 import type { ProjectModules } from './load-project-modules';
-import { compileSfc, type CompiledSfc } from './compile';
+import { compileSfc, type CompiledSfc, UNKNOWN } from './compile';
 import { createCtxProxy } from './ctx-proxy';
 import { createPlaceholder, type PlaceholderOptions } from './placeholder';
 
@@ -27,6 +27,8 @@ export class ComponentGraph {
   readonly warnings: string[] = [];
   readonly deps = new Set<string>();
   readonly time = { sfcCompile: 0, packageImport: 0 };
+  /** Template identifiers of the root component that a fixture can set, in first-use order. */
+  readonly rootInputs = new Set<string>();
   private defs = new Map<string, any>();
   /** `opts.components` keyed by PascalCase name. */
   private components: Record<string, string>;
@@ -64,8 +66,26 @@ export class ComponentGraph {
   }
 
 
-  async build(file: string, stack: string[] = [], fixture: Record<string, unknown> | null = null): Promise<any> {
-    if (!fixture && this.defs.has(file)) return this.defs.get(file);
+  /**
+   * What a fixture can give the root component `entry` (REPORT V12): its props (declared types, a
+   * static default) and the other identifiers its template used (`rootInputs`), with a static
+   * initial value when there is one. **A function defined in `<script setup>` is left out**
+   * (`setup-const` without a static value): JSON cannot supply one.
+   */
+  inputs(entry: string) {
+    const sfc = this.compiled.get(entry);
+    const withDefault = (value: unknown) => (value === UNKNOWN || value === undefined ? {} : { default: value });
+    const settable = (name: string) => sfc?.bindings[name] !== 'setup-const' || name in (sfc?.literals ?? {});
+    return {
+      props: Object.entries(sfc?.props ?? {}).map(([name, p]) => ({ name, types: p.types, ...withDefault(p.default) })),
+      values: [...this.rootInputs].filter(settable).map((name) => ({ name, ...withDefault(sfc?.literals[name]) })),
+    };
+  }
+
+  /** Build a component definition. `root` marks the component being previewed and carries its fixture. */
+  async build(file: string, stack: string[] = [], root: { fixture: Record<string, unknown> } | null = null): Promise<any> {
+    const fixture = root?.fixture ?? null;
+    if (!root && this.defs.has(file)) return this.defs.get(file);
     const rel = this.mods.rel(file);
     if (stack.includes(file)) return this.stub(path.basename(file, '.vue'), `circular import (${[...stack, file].map((f) => this.mods.rel(f)).join(' -> ')})`);
     if (stack.length >= this.opts.maxDepth) return this.stub(path.basename(file, '.vue'), `max depth ${this.opts.maxDepth} exceeded at ${rel}`);
@@ -109,12 +129,13 @@ export class ComponentGraph {
       components,
       setup() {
         const instance = graph.mods.vue.getCurrentInstance();
-        return createCtxProxy({ sfc: sfc!, instance, imports, fixture, placeholder });
+        const inputs = root ? graph.rootInputs : undefined;
+        return createCtxProxy({ sfc: sfc!, instance, imports, fixture, placeholder, inputs });
       },
       render: sfc.render,
     };
     for (const p of Object.values(def.props) as any[]) if (p.type.length === 0) p.type = null;
-    if (!fixture) this.defs.set(file, def);
+    if (!root) this.defs.set(file, def);
     return def;
   }
 

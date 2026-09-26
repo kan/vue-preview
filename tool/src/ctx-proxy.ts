@@ -10,6 +10,11 @@ export interface CtxSources {
   imports: Record<string, unknown>;
   fixture: Record<string, unknown> | null;
   placeholder: PlaceholderOptions;
+  /**
+   * Collects each template identifier that a fixture can set (not a prop, not an import): the
+   * root component's inputs besides its props (REPORT V12). Only given for the root.
+   */
+  inputs?: Set<string>;
 }
 
 const hyphenate = (s: string) => s.replace(/\B([A-Z])/g, '-$1').toLowerCase();
@@ -59,6 +64,7 @@ export function createCtxProxy(src: CtxSources) {
     // 2. resolved imports (child components, library values)
     if (key in imports) return imports[key];
     if (propName) return resolveProp(propName, key);
+    src.inputs?.add(key);
     // 3. fixture
     if (fixture && key in fixture) return fixture[key];
     // 4. static literals (`ref(false)`, `const labels = {...}`)
