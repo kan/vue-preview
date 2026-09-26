@@ -105,6 +105,16 @@ describe('inferred config (no vue-preview.config.json)', () => {
   }
 });
 
+describe('alias from vite.config (no config file, no tsconfig)', () => {
+  const r = load('viteonly-UserPage');
+  const inferred = load('noconfig-UserPage');
+  test('`@` imports resolve through resolve.alias', () => {
+    expect(r.warnings).toEqual([]);
+    expect(r.deps).toContain('vite.config.ts');
+  });
+  test('renders like the tsconfig-based run', () => expect(r.html).toBe(inferred.html));
+});
+
 describe('dependency cache (no node_modules in the project)', () => {
   for (const name of ['UserPage', 'UserTable']) {
     const project = load(name);

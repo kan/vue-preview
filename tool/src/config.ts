@@ -1,4 +1,5 @@
-// Configuration loading (vue-preview.config.json + tsconfig paths fallback).
+// Configuration loading (vue-preview.config.json + tsconfig paths fallback). Keys the config
+// leaves out are inferred in detect-config.ts.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -43,6 +44,7 @@ export function aliasesFromTsconfig(root: string): Record<string, string> {
   return out;
 }
 
+/** Aliases as absolute directories: the config's `aliases` (root-relative), else tsconfig `paths`. */
 export function resolveAliases(root: string, config: Config): Record<string, string> {
   return config.aliases
     ? Object.fromEntries(Object.entries(config.aliases).map(([k, v]) => [k, path.resolve(root, v)]))

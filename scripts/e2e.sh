@@ -26,6 +26,10 @@ for c in src/components/UserPage.vue src/components/UserTable.vue; do
   docker compose exec -T app "$BIN" render "$c" --root /tmp/noconfig --json --out "/out/noconfig-$name.json"
   echo "rendered $c (inferred config)"
 done
+# ...and without tsconfig.json either: the `@` alias comes from vite.config.ts (REPORT V9)
+docker compose exec -T app sh -c 'rm -rf /tmp/viteonly && mkdir /tmp/viteonly && for f in src node_modules package.json package-lock.json vite.config.ts; do ln -s /app/$f /tmp/viteonly/$f; done'
+docker compose exec -T app "$BIN" render src/components/UserPage.vue --root /tmp/viteonly --json --out /out/viteonly-UserPage.json
+echo "rendered src/components/UserPage.vue (alias from vite.config)"
 # the first run installs into the cache, the second reuses it
 for c in src/components/UserPage.vue src/components/UserTable.vue; do
   name=$(basename "$c" .vue)

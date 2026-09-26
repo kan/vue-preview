@@ -1,30 +1,24 @@
 // Fill in what vue-preview.config.json leaves out by reading the project statically
-// (REPORT V8). Nothing here executes project code: the app entry (src/main.ts) is read
-// as text. Explicit config keys always win.
+// (REPORT V8 / V9). Nothing here executes project code: the app entry (src/main.ts) and
+// vite.config are read as text. Explicit config keys always win.
 import fs from 'node:fs';
 import path from 'node:path';
-import { type Config, firstFile, projectPath, readJson } from './config';
+import { aliasesFromTsconfig, type Config, firstFile, projectPath, readJson, resolveAliases } from './config';
 import { relPosix } from './load-project-modules';
+import { balancedBlock, objectEntry, splitTopLevel, stripComments, unquote } from './text-scan';
 
 const ENTRY_CANDIDATES = ['src/main.ts', 'src/main.js', 'src/main.mts', 'src/main.mjs'];
+const VITE_CONFIGS = ['vite.config.ts', 'vite.config.mts', 'vite.config.js', 'vite.config.mjs', 'vite.config.cjs'];
 const SCRIPT_EXTS = ['', '.ts', '.js', '.mts', '.mjs', '/index.ts', '/index.js'];
 
 export interface CompletedConfig {
   config: Config;
+  /** Import aliases as absolute directories (what rendering resolves with). */
+  aliases: Record<string, string>;
   /** Config keys that were inferred rather than written. */
   detected: string[];
-  /** Files read to infer them (absolute); a change to them changes the output. */
+  /** Files read to decide the config (absolute); a change to them changes the output. */
   deps: string[];
-}
-
-/** The `{ ... }` starting at `open` (an index of `{`), braces balanced; strings are not special-cased. */
-export function balancedBlock(text: string, open: number): string | null {
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    if (text[i] === '{') depth++;
-    else if (text[i] === '}' && --depth === 0) return text.slice(open, i + 1);
-  }
-  return null;
 }
 
 export interface EntryImport {
@@ -38,12 +32,11 @@ export interface EntryImport {
 /**
  * The imports of an app entry with their default binding: `import X from`, `import X, { a } from`,
  * `import { a } from` (no default: `name` is null but it is not a side-effect import either) and
- * `import 'spec'`. Comments are removed first so that commented-out imports do not count.
+ * `import 'spec'`. Commented-out imports do not count.
  */
 export function entryImports(source: string): EntryImport[] {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   const re = /^\s*import\s+(?:([\w$]+)?\s*,?\s*(?:\{[^}]*\}|\*\s*as\s+[\w$]+)?\s*(from)\s+)?['"]([^'"]+)['"]/gm;
-  return [...code.matchAll(re)].map(([, name, from, spec]) => ({ name: name ?? null, spec, sideEffect: !from }));
+  return [...stripComments(source).matchAll(re)].map(([, name, from, spec]) => ({ name: name ?? null, spec, sideEffect: !from }));
 }
 
 export interface PrimeVueUse {
@@ -65,13 +58,70 @@ export function primeVueUse(source: string, ident: string): PrimeVueUse | null {
 }
 
 /**
- * `explicit` completed from the app entry. `aliases` are the ones rendering uses
- * (`resolveAliases`), so that the entry's imports resolve the same way as components do.
+ * The directory an alias value names, root-relative, or null when it is not a path we can
+ * read. A plain string must start with `.` or `/` (`'vue/dist/vue.esm-bundler.js'` retargets a
+ * package and is not ours); otherwise the value must build a path from a literal
+ * (`path.resolve(__dirname, './src')`, `fileURLToPath(new URL('./src', import.meta.url))`).
+ * Variables and template literals are skipped.
  */
-export function completeConfig(root: string, explicit: Config, aliases: Record<string, string>): CompletedConfig {
+function aliasTarget(value: string): string | null {
+  let literal = unquote(value);
+  if (literal !== null) {
+    if (!/^[./]/.test(literal)) return null;
+  } else if (/\b(?:resolve|join)\s*\(|fileURLToPath\s*\(|new\s+URL\s*\(/.test(value)) {
+    literal = /['"]([^'"]*)['"]/.exec(value)?.[1] ?? null;
+  }
+  return literal === null ? null : literal.replace(/^\.?\//, '').replace(/\/$/, '') || '.';
+}
+
+/** `{ find: '@', replacement: ... }` of the array form, as `[key, value]`. RegExp finds give null. */
+function arrayEntry(part: string): [string, string] | null {
+  if (!part.startsWith('{')) return null;
+  const fields = Object.fromEntries(splitTopLevel(part.slice(1, -1)).map(objectEntry).filter((e) => e !== null));
+  const key = unquote(fields.find ?? '');
+  return key && fields.replacement ? [key, fields.replacement] : null;
+}
+
+/**
+ * `resolve.alias` of a vite config, read as text (never run): the object form
+ * `{ '@': path.resolve(__dirname, './src') }` and the array form `[{ find: '@', replacement: ... }]`.
+ * Returns targets relative to the config's directory. Entries whose target is not a readable
+ * path (a package, a variable, a RegExp `find`) are skipped.
+ */
+export function viteAliases(source: string): Record<string, string> {
+  const code = stripComments(source);
+  const m = /\balias\s*:\s*([{[])/.exec(code);
+  const block = m && balancedBlock(code, m.index + m[0].length - 1);
+  if (!m || !block) return {};
+  const out: Record<string, string> = {};
+  for (const part of splitTopLevel(block.slice(1, -1))) {
+    const [key, value] = (m[1] === '[' ? arrayEntry(part) : objectEntry(part)) ?? [];
+    const target = value && aliasTarget(value);
+    if (key && target) out[key] = target;
+  }
+  return out;
+}
+
+export function completeConfig(root: string, explicit: Config): CompletedConfig {
   const config: Config = { ...explicit };
   const detected: string[] = [];
   const deps: string[] = [];
+
+  // aliases: the config's, else tsconfig `paths`, else vite.config `resolve.alias` (REPORT V9)
+  if (config.aliases === undefined) {
+    if (Object.keys(aliasesFromTsconfig(root)).length) {
+      deps.push(path.join(root, 'tsconfig.json'));
+    } else {
+      const vite = firstFile(VITE_CONFIGS.map((n) => path.join(root, n)));
+      const fromVite = vite ? viteAliases(fs.readFileSync(vite, 'utf8')) : {};
+      if (vite && Object.keys(fromVite).length) {
+        config.aliases = fromVite;
+        detected.push('aliases');
+        deps.push(vite);
+      }
+    }
+  }
+  const aliases = resolveAliases(root, config);
 
   // only keys that are absent: `null` in the config means "explicitly off"
   const needs = (key: 'globalCss' | 'tailwind' | 'primevue') => config[key] === undefined;
@@ -115,7 +165,7 @@ export function completeConfig(root: string, explicit: Config, aliases: Record<s
     detected.push('primevue');
     deps.push(manifest);
   }
-  return { config, detected, deps };
+  return { config, aliases, detected, deps };
 }
 
 function dependsOn(manifest: string, name: string): boolean {

@@ -77,7 +77,7 @@ vue-preview --version
 
 | キー | 説明 |
 | --- | --- |
-| `aliases` | import エイリアス → ルート相対ディレクトリ。省略時は tsconfig の `compilerOptions.paths`（`"@/*": ["src/*"]` 形式）から読み取る |
+| `aliases` | import エイリアス → ルート相対ディレクトリ。省略時は tsconfig の `compilerOptions.paths`（`"@/*": ["src/*"]` 形式）から読み取り、それも無ければ vite.config の `resolve.alias` を**テキストとして**読む（オブジェクト形と、`find` が文字列の配列形。値の最初の文字列リテラルを置き換え先とする）。読んだ tsconfig / vite.config は `deps` に入る |
 | `globalCss` | インライン化する CSS。ルート相対パスかパッケージ指定。`tailwind.entry` と同じファイルは Tailwind 側で処理する |
 | `tailwind.entry` | Tailwind v4 のエントリ CSS（`@import "tailwindcss"` を含むもの） |
 | `primevue.pt` | pt 定義モジュール（default export）。TS のまま import する |
@@ -90,7 +90,7 @@ vue-preview --version
 
 ### 設定の推測（`detect-config.ts`、REPORT V8）
 
-設定ファイルに書かれていない（`undefined` の）キーは、アプリのエントリ（`src/main.{ts,js,mts,mjs}`）を**テキストとして読んで**推測します。`null` は「明示的に使わない」の意味なので推測しません。書いた値は常に推測より優先します。
+設定ファイルに書かれていない（`undefined` の）キーは、vite.config（`aliases`）とアプリのエントリ（`src/main.{ts,js,mts,mjs}`）を**テキストとして読んで**推測します。読むときはコメントを除き、括弧の対応は文字列を飛ばして取ります（`text-scan.ts`）。`null` は「明示的に使わない」の意味なので推測しません。書いた値は常に推測より優先します。
 
 | キー | 推測の仕方 |
 | --- | --- |
@@ -107,7 +107,7 @@ vue-preview --version
 ```
 cli.ts
  ├─ deps-cache.ts            ルートで vue を解決できなければ依存キャッシュを用意し、NODE_PATH 付きで自分を起動し直す
- ├─ detect-config.ts         設定ファイルに無いキーを src/main.ts から推測する
+ ├─ detect-config.ts         設定ファイルに無いキーを vite.config（alias）と src/main.ts から推測する
  ├─ load-project-modules.ts  ルート（または依存キャッシュ）の node_modules から vue / compiler-sfc / server-renderer を解決・import
  ├─ resolve-components.ts    ルート SFC から import を再帰的にたどってコンポーネント定義を組み立てる
  │   ├─ compile.ts           parse → compileScript（静的解析のみ）→ compileTemplate（function モード）→ compileStyle

@@ -23,6 +23,7 @@
 | V6 出力とパフォーマンス | **成立** | 外部リクエスト 0 件。Vite との画素差分は 0〜0.04%。1 回あたり約 0.6〜1.0 秒 |
 | V7 node_modules が無いときの依存キャッシュ | **成立** | ロックファイルから埋め込みの bun で入れ、`NODE_PATH` 付きで起動し直す。Windows 版でも描けた |
 | V8 設定ファイルが無いプロジェクト | **成立** | 書かれていないキーをエントリ（`src/main.ts`）の静的な読み取りで補う。PrimeVue を入れ忘れて真っ白になるのを防ぐ |
+| V9 vite.config にしか無い alias | **成立** | tsconfig に `paths` が無ければ、vite.config の `resolve.alias` をテキストとして読む |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -346,6 +347,35 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V9: vite.config にしか無い alias
+
+検証日: 2026-09-26（V8 と同じ業務アプリ）
+
+**結果: 成立**（tsconfig に `paths` が無いときは、vite.config の `resolve.alias` をテキストとして読む）
+
+### きっかけ
+- JavaScript のプロジェクトには tsconfig が無く、`@` は vite.config の `resolve.alias`（`'@': path.resolve(__dirname, './src')`）にしか書かれていないことがあります。
+- そのため `@/lib/...` の import がパッケージとして扱われ、`Cannot find package '@/lib'` の警告付きでスタブやプレースホルダになりました。
+
+### 根拠
+- vite.config は実行せず、`alias:` に続くオブジェクトまたは配列を括弧の対応で切り出して、キーと値の最初の文字列リテラルを読みました。`path.resolve(__dirname, './src')` と `fileURLToPath(new URL('./src', import.meta.url))` の両方で `./src` が取れます。
+- e2e では、fixture-app から設定ファイルと tsconfig を外したルートで描いても警告は 0 件でした。HTML は tsconfig を使って描いたものと一致しました。
+- 業務アプリでも `@/lib/...` を解決できました。残った警告は、プロジェクトの `.js` を実行しないことによる想定どおりのものだけです。
+
+### 仕様として決めたこと
+- 探す順は、設定の `aliases`、tsconfig の `paths`、vite.config の順です。混ぜずに、最初に見つかったものだけを使います。
+- 読むのは、置き換え先がパスと分かるエントリだけです。`./` や `/` で始まる文字列か、`path.resolve` / `fileURLToPath` などで文字列リテラルから組み立てた値です。
+  - `vue: 'vue/dist/vue.esm-bundler.js'` のようなパッケージの付け替えは読みません。読むと `import 'vue'` がプロジェクトのファイルとして扱われ、解決できずスタブになります。
+  - `find` が正規表現のもの、置き換え先が変数やテンプレートリテラルのものも読みません。そのときは設定の `aliases` に書いてもらいます。
+- エントリは、括弧とクォートを見ながら最上位のカンマで区切って 1 つずつ読みます。値の手前を正規表現で読み飛ばすと、値に文字列が無いエントリで隣のキーを置き換え先として拾ってしまうためです。
+- alias の推測も、V8 の推測と同じ関数（`completeConfig`）で行います。推測したときは `config.detected` に `aliases` が出ます。
+
+### ハマりどころ
+- **コメントの除去は、文字列の中を見てはいけない。** 業務アプリの vite.config には `'src/**/*'` のような glob があり、正規表現で `/* ... */` を消すと、その `/*` から次の `*/` までの alias を含む範囲がまるごと消えました。文字列リテラルを飛ばしながら走査する形に直しました（`text-scan.ts` の `stripComments`）。
+- 読んだ tsconfig / vite.config は `deps` に入れます（alias を変えたら呼び出し側が描き直せるように）。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -368,6 +398,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `load-project-modules.ts`: V1 / V7
   - `deps-cache.ts`: V7
   - `detect-config.ts`: V8
+  - `detect-config.ts`（`viteAliases`）/ `text-scan.ts`: V9
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3

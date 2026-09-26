@@ -8,7 +8,7 @@ import { loadProjectModules, relPosix } from './load-project-modules';
 import { ComponentGraph } from './resolve-components';
 import { buildTailwind, inlineUrls, resolveCssEntry } from './css';
 import { buildHtml } from './html';
-import { loadConfig, readJson, resolveAliases } from './config';
+import { loadConfig, readJson } from './config';
 import { completeConfig } from './detect-config';
 
 declare const VUE_PREVIEW_VERSION: string;
@@ -60,9 +60,8 @@ async function main() {
   }
 
   const { config: explicit, file: configFile } = loadConfig(root);
-  const aliases = resolveAliases(root, explicit);
-  // keys the config file leaves out are inferred from the app entry (REPORT V8)
-  const { config, detected, deps: detectDeps } = completeConfig(root, explicit, aliases);
+  // keys the config file leaves out are inferred from tsconfig / vite.config / the app entry (REPORT V8 / V9)
+  const { config, aliases, detected, deps: detectDeps } = completeConfig(root, explicit);
   const warnings: string[] = [];
   const warn = (m: string) => void (warnings.includes(m) || warnings.push(m));
   const deps = new Set<string>();

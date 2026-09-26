@@ -90,7 +90,7 @@ fixture にない値は、次の順で補われます。
 }
 ```
 
-`aliases` を省略すると、tsconfig の `paths` から読み取ります。各キーの詳細は [DESIGN.md](DESIGN.md#設定ファイル-vue-previewconfigjsonルート直下) を参照してください。
+`aliases` を省略すると、tsconfig の `paths` から読み取ります。tsconfig に無ければ、`vite.config` の `resolve.alias`（`'@': path.resolve(__dirname, './src')` など）から読み取ります。`vite.config` は実行しません。各キーの詳細は [DESIGN.md](DESIGN.md#設定ファイル-vue-previewconfigjsonルート直下) を参照してください。
 
 設定ファイルは無くてもかまいません。書いていないキーは、アプリのエントリ（`src/main.ts` / `src/main.js`）を読んで推測します。`main.ts` は実行しません。
 
