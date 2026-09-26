@@ -6,7 +6,7 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 | --- | --- |
 | [README.md](README.md) | 利用者向けの概要と使い方 |
 | [DESIGN.md](DESIGN.md) | 設計の前提、CLI と設定の仕様、処理の流れ |
-| [REPORT.md](REPORT.md) | 検証項目 V1〜V13 の結果、ハマりどころ、計測値、今後の提案 |
+| [REPORT.md](REPORT.md) | 検証項目 V1〜V14 の結果、ハマりどころ、計測値、今後の提案 |
 
 **設計や仕様を変えたら DESIGN.md を更新してください。検証で何かが分かったら REPORT.md に追記してください。**
 
@@ -25,7 +25,7 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 │   ├── src/
 │   │   ├── cli.ts                  # 引数処理、全体の流れ、計測
 │   │   ├── config.ts               # vue-preview.config.json / tsconfig paths
-│   │   ├── detect-config.ts        # 設定に無いキーを vite.config とアプリのエントリ（src/main.ts）から推測する
+│   │   ├── detect-config.ts        # 設定に無いキーを vite.config・index.html・アプリのエントリ（src/main.ts）から推測する
 │   │   ├── text-scan.ts            # JS をテキストとして読む補助（括弧の対応・分割・コメントの除去）
 │   │   ├── deps-cache.ts           # node_modules が無いときの依存キャッシュ（埋め込みの bun で install）
 │   │   ├── load-project-modules.ts # プロジェクト（または依存キャッシュ）の node_modules からの解決・import

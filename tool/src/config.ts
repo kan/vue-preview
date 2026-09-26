@@ -87,3 +87,22 @@ export function isFile(f: string): boolean {
 export function firstFile(candidates: string[]): string | null {
   return candidates.find(isFile) ?? null;
 }
+
+/** Vite's public directory (its default `publicDir`): served at `/`, so `/img/a.png` is `public/img/a.png`. */
+const PUBLIC_DIR = 'public';
+
+/** `https://…` and protocol-relative `//…` URLs: not a file of the project. */
+export const isExternalUrl = (url: string) => /^(https?:)?\/\//i.test(url);
+
+/**
+ * The file a local URL (`?query` / `#hash` stripped) names, as Vite serves it: a root-absolute
+ * one (`/static/a.css`) from the public directory first, then the project root (the root's
+ * path when neither exists); a relative one from `baseDir` (the referring file's directory).
+ */
+export function resolveUrl(root: string, baseDir: string, url: string): string {
+  const clean = url.split(/[?#]/)[0];
+  if (!clean.startsWith('/')) return path.resolve(baseDir, clean);
+  const rel = clean.replace(/^\/+/, '');
+  const candidates = [path.join(root, PUBLIC_DIR, rel), path.join(root, rel)];
+  return firstFile(candidates) ?? candidates[1];
+}

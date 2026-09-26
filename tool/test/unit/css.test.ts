@@ -12,7 +12,7 @@ describe('inlineUrls', () => {
   test('keeps only woff2 in @font-face and inlines it', () => {
     const css = `@font-face { font-family: 'i'; src: url('./fonts/i.eot'); src: url('./fonts/i.eot?#iefix') format('embedded-opentype'), url('./fonts/i.woff2') format('woff2'), url('./fonts/i.woff') format('woff'); }`;
     const warnings: string[] = [];
-    const out = inlineUrls(css, dir, (m) => warnings.push(m));
+    const out = inlineUrls(css, dir, dir, (m) => warnings.push(m));
     expect(out).toContain(`url(data:font/woff2;base64,${Buffer.from('woff2').toString('base64')}) format('woff2')`);
     expect(out).not.toContain('.eot');
     expect(out).not.toContain('font/woff;');
@@ -21,9 +21,19 @@ describe('inlineUrls', () => {
 
   test('leaves data: urls alone and warns on missing / external', () => {
     const warnings: string[] = [];
-    const out = inlineUrls(`a{background:url(data:x)} b{background:url(missing.png)} c{background:url(https://x.test/a.png)}`, dir, (m) => warnings.push(m));
+    const out = inlineUrls(`a{background:url(data:x)} b{background:url(missing.png)} c{background:url(https://x.test/a.png)}`, dir, dir, (m) => warnings.push(m));
     expect(out).toContain('url(data:x)');
     expect(warnings.length).toBe(2);
+  });
+
+  test('a root-absolute url is looked up in public/, then the root (as Vite serves it)', () => {
+    fs.mkdirSync(path.join(dir, 'public/img'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'public/img/a.png'), 'png');
+    const warnings: string[] = [];
+    const out = inlineUrls(`a{background:url(/img/a.png)} b{src:url('/fonts/i.ttf?v=1')}`, path.join(dir, 'elsewhere'), dir, (m) => warnings.push(m));
+    expect(out).toContain(`url(data:image/png;base64,${Buffer.from('png').toString('base64')})`);
+    expect(out).toContain(`url(data:font/ttf;base64,${Buffer.from('ttf').toString('base64')})`);
+    expect(warnings).toEqual([]);
   });
 });
 

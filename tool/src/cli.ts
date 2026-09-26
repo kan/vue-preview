@@ -64,12 +64,13 @@ async function main() {
 
   const { config: explicit, file: configFile } = loadConfig(root);
   // keys the config file leaves out are inferred from tsconfig / vite.config / the app entry (REPORT V8 / V9)
-  const { config, aliases, detected, deps: detectDeps } = completeConfig(root, explicit);
+  const { config, aliases, detected, deps: detectDeps, warnings: detectWarnings } = completeConfig(root, explicit);
   const warnings: string[] = [];
   const warn = (msg: string) => {
     const m = plainPlaceholders(msg); // a placeholder in a Vue warning: its full expression
     if (!warnings.includes(m)) warnings.push(m);
   };
+  detectWarnings.forEach(warn);
   const deps = new Set<string>();
   // libraries (the project's node_modules, or the dependency cache's) are not the project's files
   const addDep = (abs: string) => {
@@ -184,7 +185,7 @@ async function main() {
       continue;
     }
     if (file === twEntry) continue; // compiled by Tailwind below
-    css.push({ label: `global:${g}`, css: inlineUrls(fs.readFileSync(file, 'utf8'), path.dirname(file), warn) });
+    css.push({ label: `global:${g}`, css: inlineUrls(fs.readFileSync(file, 'utf8'), path.dirname(file), root, warn) });
     addDep(file);
   }
   let tailwindInfo: any = null;

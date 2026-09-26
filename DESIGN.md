@@ -103,18 +103,18 @@ vue-preview --version
 
 ### 設定の推測（`detect-config.ts`、REPORT V8）
 
-設定ファイルに書かれていない（`undefined` の）キーは、vite.config（`aliases`）とアプリのエントリ（`src/main.{ts,js,mts,mjs}`）を**テキストとして読んで**推測します。読むときはコメントを除き、括弧の対応は文字列を飛ばして取ります（`text-scan.ts`）。`null` は「明示的に使わない」の意味なので推測しません。書いた値は常に推測より優先します。
+設定ファイルに書かれていない（`undefined` の）キーは、vite.config（`aliases`）、ルートの `index.html`（`globalCss`）、アプリのエントリ（`src/main.{ts,js,mts,mjs}`）を**テキストとして読んで**推測します。読むときはコメントを除き、括弧の対応は文字列を飛ばして取ります（`text-scan.ts`）。`null` は「明示的に使わない」の意味なので推測しません。書いた値は常に推測より優先します。
 
 | キー | 推測の仕方 |
 | --- | --- |
-| `globalCss` | エントリが副作用で import している `.css`（`import './style.css'`）を、並び順のまま |
+| `globalCss` | ルートの `index.html` の `<link rel="stylesheet">`（コメントの中と、既定では適用されない `rel="alternate stylesheet"` は除く）と、エントリが副作用で import している `.css`（`import './style.css'`）を、この順に並び順のまま。ブラウザでも HTML の link が先に読まれる。`/` で始まる href は `public/`（Vite の既定の `publicDir`）の下、無ければルートの下のファイル。`http(s):` と `//` の外部 CSS は取り込まず warning に出す（REPORT V14） |
 | `tailwind.entry` | そのうち `@import "tailwindcss"` を含むローカルの CSS |
 | `primevue` | エントリの `app.use(<primevue/config の import>, { ... })` から `unstyled` と `pt`。`pt` はその識別子の import 元のファイル（`index.js` などを補う。`{ pt }` の省略記法も読む）。エントリに無くても、package.json の依存に `primevue` があれば PrimeVue 本来の既定（`unstyled: false`）で入れる。入れないと、PrimeVue のコンポーネントが `$primevue` を読んで落ちる |
 | `components` | `components.d.ts`（ルート、`src/`、`types/`、`.nuxt/` の下。unplugin-vue-components と Nuxt が生成する）の `Name: typeof import('...')['default']` と、エントリの `app.component('name', 識別子)`（識別子の import 元を辿る）。両方にあればエントリが優先 |
 | `i18n` | `src/i18n` / `src/locales` / `src/locale` / `src/lang` / `src/langs` のうち、ロケール名（`ja`、`pt-BR` など）の `.json` / `.ts` / `.js` / `.mjs` がある最初のディレクトリ。`locale` は `ja`、`en`、最初に見つかったものの順（REPORT V13） |
 
 - エントリの相対 import と、alias（`aliases` か tsconfig の `paths`）経由の import を解決します。
-- 読んだエントリは、何も推測できなかったときも `deps` に入ります（`app.use(PrimeVue, ...)` や CSS の import を足したら描き直せるように）。依存から PrimeVue を入れたときは `package.json` も入ります。推測したキーは `--json` の `config.detected` に出ます。
+- 読んだエントリと `index.html` は、推測できたものが無くても `deps` に入ります（`app.use(PrimeVue, ...)` や CSS の import を足したら描き直せるように）。依存から PrimeVue を入れたときは `package.json` も入ります。推測したキーは `--json` の `config.detected` に出ます。
 - コメントの中の import は数えません。`import X, { a } from` の形も読みます。
 
 ## 処理の流れ
@@ -208,6 +208,8 @@ PrimeVue の Portal は `mounted` になるまで何も描画しません。そ�
   - 候補は、出力 HTML から `@tailwindcss/oxide` の `Scanner.getCandidatesWithPositions` で抽出する。
   - oxide が使えない場合は、class 属性を分割する方式にフォールバックする。
 - `url()` は data URI に置き換える。`@font-face` に woff2 があれば woff2 だけを残す。
+  - 相対パスは CSS のファイルからの位置として探す。`/` で始まるものは `public/` の下、無ければルートの下として探す（Vite の配信と同じ。`config.ts` の `resolveUrl`。index.html の link も同じ関数で解決する）。`public/` は Vite の既定の置き場で、vite.config の `publicDir` は読まない。
+  - SFC の `<style>` の `url()` は、この置き換えを通らない（従来どおり）。
 
 ## スコープ外（提案として REPORT.md に記録）
 

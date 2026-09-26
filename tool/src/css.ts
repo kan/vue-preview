@@ -1,6 +1,7 @@
 // V5: CSS collection and inlining (scoped, global, Tailwind v4, fonts).
 import fs from 'node:fs';
 import path from 'node:path';
+import { isExternalUrl, resolveUrl } from './config';
 import type { ProjectModules } from './load-project-modules';
 
 const MIME: Record<string, string> = {
@@ -17,20 +18,20 @@ const MIME: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
-/** Keep only woff2 sources in @font-face when available (size), then inline url()s as data URIs. */
-export function inlineUrls(css: string, baseDir: string, warn: (m: string) => void): string {
+/**
+ * Keep only woff2 sources in @font-face when available (size), then inline url()s as data URIs.
+ * A root-absolute url (`/img/a.png`) is looked up as Vite serves it from the project `root`.
+ */
+export function inlineUrls(css: string, baseDir: string, root: string, warn: (m: string) => void): string {
   css = css.replace(/@font-face\s*{[^}]*}/g, (block) => {
     if (!/\.woff2/.test(block)) return block;
     const srcs = [...block.matchAll(/url\([^)]*\.woff2[^)]*\)\s*format\([^)]*\)/g)].map((m) => m[0]);
     return block.replace(/\s*src\s*:[^;]*;/g, '').replace('{', `{\n  src: ${srcs.join(', ')};`);
   });
   return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, (whole, _q, url: string) => {
-    if (/^(data:|https?:|#|\/\/)/.test(url)) {
-      if (/^https?:|^\/\//.test(url)) warn(`external url kept in CSS: ${url}`);
-      return whole;
-    }
-    const clean = url.split(/[?#]/)[0];
-    const file = path.resolve(baseDir, clean);
+    if (isExternalUrl(url)) warn(`external url kept in CSS: ${url}`);
+    if (isExternalUrl(url) || /^(data:|#)/.test(url)) return whole;
+    const file = resolveUrl(root, baseDir, url);
     if (!fs.existsSync(file)) {
       warn(`url not found: ${url} (from ${baseDir})`);
       return whole;
@@ -81,7 +82,7 @@ export async function buildTailwind(mods: ProjectModules, entry: string, html: s
   }
   const uniq = [...new Set(candidates)];
   let css: string = compiler.build(uniq);
-  css = inlineUrls(css, path.dirname(file), warn);
+  css = inlineUrls(css, path.dirname(file), mods.root, warn);
   return { css, candidates: uniq.length, extractor, deps: [...deps] };
 }
 

@@ -149,6 +149,11 @@ describe('inferred config (no vue-preview.config.json)', () => {
       expect(r.config).toEqual({ file: null, detected: ['i18n', 'globalCss', 'tailwind', 'primevue', 'components'] });
       expect(r.deps).toContain('src/main.ts');
     });
+    test(`${name}: a stylesheet linked from index.html is inlined from public/`, () => {
+      expect(r.deps).toContain('index.html');
+      expect(r.deps).toContain('public/static/linked.css');
+      expect(r.html).toContain('.linked-from-index');
+    });
     test(`${name}: renders like the explicit config`, () => {
       expect(r.warnings).toEqual(explicit.warnings);
       // same markup; the order of the inlined CSS follows the entry's imports instead

@@ -3,7 +3,7 @@
 // vite.config are read as text. Explicit config keys always win.
 import fs from 'node:fs';
 import path from 'node:path';
-import { aliasesFromTsconfig, type Config, firstFile, projectPath, readJson, resolveAliases } from './config';
+import { aliasesFromTsconfig, type Config, firstFile, isExternalUrl, projectPath, readJson, resolveAliases, resolveUrl } from './config';
 import { findMessageFiles, pickLocale } from './i18n';
 import { relPosix } from './load-project-modules';
 import { balancedBlock, objectEntry, splitTopLevel, stripComments, unquote } from './text-scan';
@@ -22,6 +22,8 @@ export interface CompletedConfig {
   detected: string[];
   /** Files read to decide the config (absolute); a change to them changes the output. */
   deps: string[];
+  /** What was found but cannot be used (an external stylesheet). */
+  warnings: string[];
 }
 
 export interface EntryImport {
@@ -124,6 +126,7 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
   const config: Config = { ...explicit };
   const detected: string[] = [];
   const deps: string[] = [];
+  const warnings: string[] = [];
 
   // aliases: the config's, else tsconfig `paths`, else vite.config `resolve.alias` (REPORT V9)
   if (config.aliases === undefined) {
@@ -179,29 +182,44 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
     }
   }
 
+  const wantsCss = needs('globalCss') || needs('tailwind');
+  /** Global stylesheets: a project file (`file`) or a package specifier (`spec` only). */
+  const css: { spec: string; file: string | null }[] = [];
+
+  // <link rel="stylesheet"> of index.html come first, as the browser loads them before the
+  // entry's imports (REPORT V14). Like the page, `/…` is Vite's public directory.
+  const indexHtml = path.join(root, 'index.html');
+  const html = wantsCss ? readIfExists(indexHtml) : null;
+  if (html !== null) {
+    deps.push(indexHtml);
+    for (const href of htmlStylesheets(html)) {
+      if (isExternalUrl(href)) warnings.push(`index.html: external stylesheet not inlined: ${href}`);
+      else css.push({ spec: href, file: resolveUrl(root, root, href) });
+    }
+  }
+
   const entry =
-    needs('globalCss') || needs('tailwind') || needs('primevue') || needs('components')
-      ? firstFile(ENTRY_CANDIDATES.map((n) => path.join(root, n)))
-      : null;
+    wantsCss || needs('primevue') || needs('components') ? firstFile(ENTRY_CANDIDATES.map((n) => path.join(root, n))) : null;
+  const source = entry ? fs.readFileSync(entry, 'utf8') : '';
+  const imports = entry ? entryImports(source) : [];
+  for (const i of imports) if (entry && i.sideEffect && i.spec.endsWith('.css')) css.push({ spec: i.spec, file: projectPath(i.spec, entry, aliases) });
+
+  if (needs('globalCss') && css.length) {
+    config.globalCss = css.map((c) => (c.file ? relPosix(root, c.file) : c.spec));
+    detected.push('globalCss');
+  }
+  if (needs('tailwind')) {
+    const tw = css.find((c) => c.file && /@import\s+['"]tailwindcss['"]/.test(readIfExists(c.file) ?? ''))?.file;
+    if (tw) {
+      config.tailwind = { entry: relPosix(root, tw) };
+      detected.push('tailwind');
+    }
+  }
+
   if (entry) {
     // the entry decides the inferred keys, so a change to it (adding app.use(PrimeVue), a CSS
     // import) changes the output even when nothing could be inferred yet
     deps.push(entry);
-    const source = fs.readFileSync(entry, 'utf8');
-    const imports = entryImports(source);
-    const css = imports.filter((i) => i.sideEffect && i.spec.endsWith('.css')).map((i) => ({ spec: i.spec, file: projectPath(i.spec, entry, aliases) }));
-
-    if (needs('globalCss') && css.length) {
-      config.globalCss = css.map((c) => (c.file ? relPosix(root, c.file) : c.spec));
-      detected.push('globalCss');
-    }
-    if (needs('tailwind')) {
-      const tw = css.find((c) => c.file && /@import\s+['"]tailwindcss['"]/.test(readIfExists(c.file) ?? ''))?.file;
-      if (tw) {
-        config.tailwind = { entry: relPosix(root, tw) };
-        detected.push('tailwind');
-      }
-    }
     const primeIdent = imports.find((i) => i.spec === 'primevue/config' && i.name)?.name;
     const use = needs('primevue') && primeIdent ? primeVueUse(source, primeIdent) : null;
     if (use) {
@@ -233,7 +251,23 @@ export function completeConfig(root: string, explicit: Config): CompletedConfig 
     detected.push('primevue');
     deps.push(manifest);
   }
-  return { config, aliases, detected, deps };
+  return { config, aliases, detected, deps, warnings };
+}
+
+/**
+ * `<link rel="stylesheet" href="…">` of an HTML page, in document order. Commented-out links and
+ * `rel="alternate stylesheet"` (not applied by default: a theme to switch to) do not count.
+ */
+export function htmlStylesheets(html: string): string[] {
+  const attr = (tag: string, name: string) => new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(tag)?.slice(1).find((v) => v !== undefined);
+  return [...html.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<link\b[^>]*>/gi)]
+    .map(([tag]) => tag)
+    .filter((tag) => {
+      const rel = attr(tag, 'rel')?.toLowerCase().split(/\s+/) ?? [];
+      return rel.includes('stylesheet') && !rel.includes('alternate');
+    })
+    .map((tag) => attr(tag, 'href'))
+    .filter((href): href is string => !!href);
 }
 
 /** The file's text, or null when it cannot be read (missing, a directory). */

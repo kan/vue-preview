@@ -28,6 +28,7 @@
 | V11 プレースホルダの表示 | **成立** | 参照式の末尾だけを表示し、全体はホバー（`title`）で出す |
 | V12 fixture で与えられる値の一覧 | **成立** | `--json` の `inputs` に、ルートの props と、描画中にテンプレートが参照した値を出す |
 | V13 i18n の簡易対応 | **成立** | `src/i18n/ja.ts` などのメッセージファイルを読み、`$t('key')` と `useI18n()` の `t` を訳す |
+| V14 index.html で読み込むグローバル CSS | **成立** | `index.html` の `<link rel="stylesheet">` を、エントリの CSS より前に `globalCss` へ入れる。`/…` は `public/` の下 |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -485,6 +486,30 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V14: index.html で読み込むグローバル CSS
+
+検証日: 2026-09-26（V13 と同じ vue-i18n の業務アプリ）
+
+**結果: 成立**（ルートの `index.html` の `<link rel="stylesheet">` を、エントリの CSS の import より前に `globalCss` へ入れる）
+
+### きっかけ
+- 業務アプリは、共通の CSS を `index.html` の `<link href="/static/css/common.css">` で読み込んでいました。V8 の推測はエントリ（`src/main.js`）の import しか見ないので、この CSS がプレビューに入っていませんでした。
+- `/static/...` は Vite が `public/` の中身をそのまま配信するパスで、ファイルの実体は `public/static/css/common.css` です。
+
+### 方式
+- `index.html` もエントリと同じくテキストとして読み、コメントを除いた `<link>` のうち `rel` に `stylesheet` を含むものの `href` を取ります。`rel="alternate stylesheet"`（テーマの切り替え先）は、ブラウザが既定では適用しないので除きます。
+- `/` で始まる href は `public/` の下を先に探し、無ければルートの下を探します。`?v=2` などのクエリは外します。相対の href はルートからのパスです。
+- 並び順は、`index.html` の link、エントリの import の順です。ブラウザも HTML の link を先に読むので、上書きの関係が同じになります。
+- `http(s):` と `//` の外部 CSS は取り込みません。出力を 1 枚で完結させる方針（V6）のためで、warning に出します。
+- CSS の中の `url(/img/a.png)` も、同じ規則（`public/` の下、無ければルートの下）で探すようにしました。これまではファイルシステムのルートを探して見つからず、warning になっていました。
+- `<script src>` で読み込む JS（Font Awesome の JS 版など）は、実行して DOM を書き換える仕組みなので扱いません。
+
+### 根拠
+- e2e では、fixture-app の `index.html` に `public/static/linked.css` への link を置き、設定ファイルなしの描画でその CSS が入り、`deps` に `index.html` と CSS が入ることを確かめました。
+- 業務アプリでは、`deps` に `index.html` と `public/static/css/common.css` が入り、warning は出ませんでした。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -512,6 +537,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `placeholder.ts`（`decoratePlaceholders`）: V11
   - `ctx-proxy.ts`（`onInput`）/ `cli.ts`（`rootInputs`）: V12
   - `i18n.ts` / `compile.ts`（`i18nNames`）: V13
+  - `detect-config.ts`（`htmlStylesheets`）/ `css.ts`（`inlineUrls` の `publicDir`）: V14
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3

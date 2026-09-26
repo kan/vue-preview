@@ -157,6 +157,30 @@ describe('completeConfig', () => {
     expect(r.deps).toEqual([path.join(root, 'src/main.js')]);
   });
 
+  test('stylesheets linked from index.html come before the entry imports; `/…` is public/', () => {
+    const root = project({
+      'index.html': `<head>
+        <link href="/static/css/common.css" rel="stylesheet" type="text/css" />
+        <link rel='preload stylesheet' href='theme.css?v=2'>
+        <!-- <link rel="stylesheet" href="/old.css"> -->
+        <link rel="icon" href="/favicon.ico">
+        <link rel="alternate stylesheet" href="/dark.css" title="dark">
+        <link rel="stylesheet" href="https://cdn.example.com/x.css">
+      </head>`,
+      'public/static/css/common.css': 'body{}',
+      'theme.css': 'a{}',
+      'src/main.js': "import './style.css';",
+      'src/style.css': 'b{}',
+    });
+    const r = completeConfig(root, {});
+    expect(r.config.globalCss).toEqual(['public/static/css/common.css', 'theme.css', 'src/style.css']);
+    expect(r.deps).toEqual([path.join(root, 'index.html'), path.join(root, 'src/main.js')]);
+    expect(r.warnings).toEqual(['index.html: external stylesheet not inlined: https://cdn.example.com/x.css']);
+    // without an entry too
+    fs.rmSync(path.join(root, 'src/main.js'));
+    expect(completeConfig(root, {}).config.globalCss).toEqual(['public/static/css/common.css', 'theme.css']);
+  });
+
   test('explicit keys win and are not read from the entry; null means off', () => {
     const root = project({
       'package.json': '{"dependencies":{"primevue":"^4"}}',

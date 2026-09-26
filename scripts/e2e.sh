@@ -25,14 +25,20 @@ done
 docker compose exec -T app "$BIN" render src/components/edge/I18nDemo.vue --root /app --locale en --json --out /out/I18nDemo-en.json
 echo "rendered src/components/edge/I18nDemo.vue (--locale en)"
 # fixture-app without vue-preview.config.json: the config is inferred from src/main.ts (REPORT V8)
-docker compose exec -T app sh -c 'rm -rf /tmp/noconfig && mkdir /tmp/noconfig && for f in src node_modules package.json package-lock.json tsconfig.json; do ln -s /app/$f /tmp/noconfig/$f; done'
+# and index.html (REPORT V14)
+# mkroot <dir> <extra files>: a root of symlinks to fixture-app without vue-preview.config.json
+mkroot() {
+  dir=$1; shift
+  docker compose exec -T app sh -c "rm -rf $dir && mkdir $dir && for f in src public index.html node_modules package.json package-lock.json $*; do ln -s /app/\$f $dir/\$f; done"
+}
+mkroot /tmp/noconfig tsconfig.json
 for c in src/components/UserPage.vue src/components/UserTable.vue src/components/edge/GlobalRegistered.vue; do
   name=$(basename "$c" .vue)
   docker compose exec -T app "$BIN" render "$c" --root /tmp/noconfig --json --out "/out/noconfig-$name.json"
   echo "rendered $c (inferred config)"
 done
 # ...and without tsconfig.json either: the `@` alias comes from vite.config.ts (REPORT V9)
-docker compose exec -T app sh -c 'rm -rf /tmp/viteonly && mkdir /tmp/viteonly && for f in src node_modules package.json package-lock.json vite.config.ts; do ln -s /app/$f /tmp/viteonly/$f; done'
+mkroot /tmp/viteonly vite.config.ts
 docker compose exec -T app "$BIN" render src/components/UserPage.vue --root /tmp/viteonly --json --out /out/viteonly-UserPage.json
 echo "rendered src/components/UserPage.vue (alias from vite.config)"
 # the first run installs into the cache, the second reuses it

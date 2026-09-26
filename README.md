@@ -95,7 +95,7 @@ fixture にない値は、次の順で補われます。
 
 設定ファイルは無くてもかまいません。書いていないキーは、アプリのエントリ（`src/main.ts` / `src/main.js`）を読んで推測します。`main.ts` は実行しません。
 
-- `globalCss`：エントリで import している CSS
+- `globalCss`：ルートの `index.html` の `<link rel="stylesheet">` と、エントリで import している CSS（この順）。`/static/a.css` のように `/` で始まるものは、Vite と同じく `public/` の下から読む。外部の URL は取り込まず、警告に出す
 - `tailwind`：そのうち `@import "tailwindcss"` を含むもの
 - `primevue`：`app.use(PrimeVue, { unstyled, pt })` の指定。依存に primevue があれば、エントリに無くても PrimeVue の既定（`unstyled: false`）で入れる
 - `components`：`app.component('s-button', SButton)` のようなグローバル登録と、自動 import の `components.d.ts`。どちらも import せずに使う子コンポーネントを描くために使う
