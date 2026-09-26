@@ -66,8 +66,8 @@ export class ComponentGraph {
 
   async build(file: string, stack: string[] = [], fixture: Record<string, unknown> | null = null): Promise<any> {
     if (!fixture && this.defs.has(file)) return this.defs.get(file);
-    const rel = path.relative(this.mods.root, file);
-    if (stack.includes(file)) return this.stub(path.basename(file, '.vue'), `circular import (${[...stack, file].map((f) => path.relative(this.mods.root, f)).join(' -> ')})`);
+    const rel = this.mods.rel(file);
+    if (stack.includes(file)) return this.stub(path.basename(file, '.vue'), `circular import (${[...stack, file].map((f) => this.mods.rel(f)).join(' -> ')})`);
     if (stack.length >= this.opts.maxDepth) return this.stub(path.basename(file, '.vue'), `max depth ${this.opts.maxDepth} exceeded at ${rel}`);
 
     let sfc = this.compiled.get(file);
@@ -122,16 +122,16 @@ export class ComponentGraph {
     const projectFile = this.projectPath(spec, fromFile);
     if (projectFile) {
       const target = this.findFile(projectFile);
-      if (!target) return this.stub(local, `cannot resolve '${spec}' from ${path.relative(this.mods.root, fromFile)}`);
+      if (!target) return this.stub(local, `cannot resolve '${spec}' from ${this.mods.rel(fromFile)}`);
       if (target.endsWith('.vue')) {
         if (imported !== 'default') {
           // named export from an SFC (types/consts from <script>) — not executed
-          this.warn(`${path.relative(this.mods.root, fromFile)}: '${imported}' from ${spec} is script code; using placeholder`);
+          this.warn(`${this.mods.rel(fromFile)}: '${imported}' from ${spec} is script code; using placeholder`);
           return createPlaceholder(local, this.opts.placeholder);
         }
         return this.build(target, stack);
       }
-      this.warn(`${path.relative(this.mods.root, fromFile)}: '${local}' comes from project script ${path.relative(this.mods.root, target)}; not executed, using placeholder`);
+      this.warn(`${this.mods.rel(fromFile)}: '${local}' comes from project script ${this.mods.rel(target)}; not executed, using placeholder`);
       return createPlaceholder(local, this.opts.placeholder);
     }
     // package import: load the real thing
@@ -144,7 +144,7 @@ export class ComponentGraph {
       return mod[imported];
     } catch (e) {
       const looksLikeComponent = /^[A-Z]/.test(local);
-      this.warn(`${path.relative(this.mods.root, fromFile)}: failed to import '${spec}': ${(e as Error).message.split('\n')[0]}`);
+      this.warn(`${this.mods.rel(fromFile)}: failed to import '${spec}': ${(e as Error).message.split('\n')[0]}`);
       return looksLikeComponent ? this.stub(local, `import '${spec}' failed`) : createPlaceholder(local, this.opts.placeholder);
     }
   }
@@ -165,6 +165,6 @@ export class ComponentGraph {
       const mod = await this.mods.importFrom(`primevue/${name.toLowerCase()}`, fromFile);
       if (mod?.default) return mod.default;
     } catch {}
-    return this.stub(tag, `unresolved component in ${path.relative(this.mods.root, fromFile)}`);
+    return this.stub(tag, `unresolved component in ${this.mods.rel(fromFile)}`);
   }
 }

@@ -50,7 +50,7 @@ export function scopeIdFor(rel: string) {
 
 export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
   const { sfc } = mods;
-  const rel = path.relative(mods.root, file);
+  const rel = mods.rel(file);
   const source = fs.readFileSync(file, 'utf8');
   const warnings: string[] = [];
   const { descriptor, errors } = sfc.parse(source, { filename: file });

@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build binary (bun container)
+      - name: Build binaries (bun container)
         run: VERSION="${RELEASE_TAG:-$GITHUB_REF_NAME}" scripts/build.sh
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -39,7 +39,7 @@ jobs:
       - name: Render fixtures and assert
         run: scripts/e2e.sh
       - name: Binary smoke test
-        run: docker compose exec -T app /opt/vue-preview/vue-preview --version
+        run: docker compose exec -T app /opt/vue-preview/vue-preview-linux-x64 --version
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -47,13 +47,39 @@ jobs:
           path: out/
       - uses: actions/upload-artifact@v4
         with:
-          name: vue-preview-linux-x64
-          path: dist/vue-preview
+          name: vue-preview-binaries
+          path: dist/vue-preview-*
+
+  windows:
+    name: Windows (fixture-app via the dependency cache)
+    needs: [e2e]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: vue-preview-binaries
+          path: dist
+      - name: Render UserTable without node_modules
+        working-directory: fixture-app
+        run: |
+          ../dist/vue-preview-windows-x64.exe --version
+          ../dist/vue-preview-windows-x64.exe render src/components/UserTable.vue --json --out ../out/win-UserTable.json
+          node -e "
+            const r = require('../out/win-UserTable.json');
+            const ok = r.modules.kind === 'cache' && r.warnings.length === 0 && r.html.includes('全 4 件')
+              && r.deps.includes('src/components/UserTable.vue');
+            console.log(JSON.stringify({ modules: r.modules, warnings: r.warnings, deps: r.deps }));
+            process.exit(ok ? 0 : 1);
+          "
 
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'v'))
-    needs: [unit, e2e]
+    needs: [unit, e2e, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -61,14 +87,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: vue-preview-linux-x64
+          name: vue-preview-binaries
           path: dist
       - name: Package
         run: |
           mkdir -p release
-          cp dist/vue-preview release/vue-preview-linux-x64
-          chmod +x release/vue-preview-linux-x64
-          (cd release && sha256sum vue-preview-linux-x64 > vue-preview-linux-x64.sha256)
+          cp dist/vue-preview-* release/
+          chmod +x release/*
+          (cd release && for f in vue-preview-*; do sha256sum "$f" > "$f.sha256"; done)
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

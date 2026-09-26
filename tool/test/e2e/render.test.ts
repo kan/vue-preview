@@ -3,12 +3,14 @@
 import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { ProjectModules } from '../../src/load-project-modules';
 
 const OUT = process.env.VUE_PREVIEW_OUT ?? '/out';
 interface Result {
   html: string;
   deps: string[];
   warnings: string[];
+  modules: ProjectModules['source'];
 }
 const load = (name: string): Result => JSON.parse(fs.readFileSync(path.join(OUT, `${name}.json`), 'utf8'));
 
@@ -81,4 +83,20 @@ describe('edge cases', () => {
     expect(r.html).toContain('data-vp-stub="FancyWidget"');
     expect(r.warnings.filter((w) => w.startsWith('stub <')).length).toBe(2);
   });
+});
+
+describe('dependency cache (no node_modules in the project)', () => {
+  for (const name of ['UserPage', 'UserTable']) {
+    const project = load(name);
+    const cached = load(`bare-${name}`);
+    test(`${name}: libraries come from the cache`, () => {
+      expect(project.modules).toEqual({ kind: 'project' });
+      expect(cached.modules.kind).toBe('cache');
+    });
+    test(`${name}: same HTML as with the project's node_modules`, () => expect(cached.html).toBe(project.html));
+    test(`${name}: same warnings and deps`, () => {
+      expect(cached.warnings).toEqual(project.warnings);
+      expect(cached.deps).toEqual(project.deps);
+    });
+  }
 });

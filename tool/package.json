@@ -2,9 +2,6 @@
   "name": "vue-preview",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "bun build src/cli.ts --compile --target=bun-linux-x64 --outfile /dist/vue-preview"
-  },
   "devDependencies": {
     "@types/bun": "latest"
   }

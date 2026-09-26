@@ -11,26 +11,29 @@ Vue SFC を受け取り、簡易レンダリングした「CSS インライン�
 - ツールは **ユーザーの `<script>` / `<script setup>` を実行しない**。テンプレートだけを render 関数にコンパイルし、値は fixture とプレースホルダから供給する。
 - `vue` / `@vue/compiler-sfc` / `@vue/server-renderer` / `primevue` / `@tailwindcss/node` などのライブラリは、**対象プロジェクトの node_modules から実行時に読み込む**。Vue の二重インスタンスを避けるためです。
   - 実行してよいのは、ライブラリと PrimeVue の pt 定義ファイルだけです。
+  - プロジェクトで `vue` を解決できないときは、**ロックファイルどおりの依存を依存キャッシュへ入れて、そこから読み込む**（後述。REPORT V7）。
 - SSR（`renderToString`）で HTML を生成し、次の CSS をすべてインライン化した 1 枚 HTML を出す。
   - scoped CSS
   - グローバル CSS
   - Tailwind が生成する CSS
   - アイコンフォント
 - 対象プロジェクトは **PrimeVue v4 / unstyled モード + pass-through(pt) + Tailwind CSS v4** を想定する。
-- node_modules はホストに存在せず、**公式 node イメージ（Debian 系）のコンテナ内にだけ存在する**。
-  - ツールのバイナリは、ホストからディレクトリごと bind mount してコンテナ内で実行する。
+- node_modules はホストに存在せず、**公式 node イメージ（Debian 系）のコンテナ内にだけ存在する**ことがある。
+  - コンテナ内で実行するときは、ツールのバイナリをホストからディレクトリごと bind mount する。
   - ファイル単位でマウントすると、バイナリを置き換えたときにコンテナ側が古い実体を掴み続けます。
-- ツールが扱うパスは、入出力ともに **プロジェクトルート相対** で統一する。
+  - ホスト（pike のシェル）から実行するときは依存キャッシュを使う。ソースは bind mount でホストにもあるので、依存さえあれば描ける。
+- バイナリは `linux-x64` / `windows-x64` / `darwin-arm64` の 3 つを配る（`scripts/build.sh`）。
+- ツールが扱うパスは、入出力ともに **プロジェクトルート相対** で統一する。区切りは OS によらず `/`（scoped CSS の hash の入力にもなるため）。
 
 ## CLI
 
 ```
-vue-preview render <path> --root <dir> [--fixture <file>] [--json] [--out <file>]
+vue-preview render <path> [--root <dir>] [--fixture <file>] [--json] [--out <file>]
                           [--portal teleport|inline|off] [--timings]
 vue-preview --version
 ```
 
-- `<path>` は `--root` からの相対パスで指定する。
+- `<path>` は `--root` からの相対パスで指定する。`--root` を省略するとカレントディレクトリ。
 - fixture は `--fixture` で指定する。
   - 省略時は `<name>.preview.json` を探す。
   - 見つからなければプレースホルダだけで描画する。
@@ -42,14 +45,18 @@ vue-preview --version
     "html": "...",
     "deps": ["src/components/UserPage.vue", "..."],
     "warnings": ["..."],
+    "modules": { "kind": "cache", "dir": "/root/.cache/vue-preview/deps/da28523b7762e04c" },
     "timings": { "loadModules": 0, "compile": 0, "ssr": 0, "css": 0, "total": 0 },
     "tailwind": { "candidates": 0, "extractor": "oxide" },
     "resolved": { "vue": "/app/node_modules/vue/index.mjs" }
   }
   ```
 
-  - `deps`: 出力に影響したファイル（SFC、CSS、pt 定義、fixture、設定）のルート相対パス。
-  - `html` / `deps` / `warnings` が契約です。それ以外は PoC の計測用です。
+  - `deps`: 出力に影響したファイル（SFC、CSS、pt 定義、fixture、設定）のルート相対パス。`node_modules` の中のファイル（プロジェクトのものも依存キャッシュのものも）は含めない。
+  - `modules`: ライブラリの出どころ。`{ "kind": "project" }` か `{ "kind": "cache", "dir": ... }`。
+  - `html` / `deps` / `warnings` / `modules` が契約です。それ以外は PoC の計測用です。
+- 依存キャッシュを初めて作るときは、その旨を stderr に 1 行出す（stdout は出力専用）。
+- 依存を用意できないとき（ロックファイルが無い、workspaces、install の失敗）は、理由を stderr に出して終了コード 1 で終わる。
 - `--portal`: PrimeVue の Portal の扱い（後述）。既定は `teleport`。
 - `--timings`: 計測値を stderr に出す。
 
@@ -84,7 +91,8 @@ vue-preview --version
 
 ```
 cli.ts
- ├─ load-project-modules.ts  ルートの node_modules から vue / compiler-sfc / server-renderer を解決・import
+ ├─ deps-cache.ts            ルートで vue を解決できなければ依存キャッシュを用意し、NODE_PATH 付きで自分を起動し直す
+ ├─ load-project-modules.ts  ルート（または依存キャッシュ）の node_modules から vue / compiler-sfc / server-renderer を解決・import
  ├─ resolve-components.ts    ルート SFC から import を再帰的にたどってコンポーネント定義を組み立てる
  │   ├─ compile.ts           parse → compileScript（静的解析のみ）→ compileTemplate（function モード）→ compileStyle
  │   └─ ctx-proxy.ts         setup() が返す Proxy。テンプレートの識別子の値を決める
@@ -93,6 +101,19 @@ cli.ts
  ├─ css.ts                   global / Tailwind（oxide で候補抽出）/ scoped、url() を data URI に置換
  └─ html.ts                  1 枚の HTML に組み立てる
 ```
+
+### 依存キャッシュ（`deps-cache.ts`）
+
+プロジェクトのルートで `vue` を解決できないとき（node_modules がコンテナの中にしか無い、など）に使います。
+
+1. ルートのロックファイルを探す（`bun.lock` / `bun.lockb` / `package-lock.json` / `npm-shrinkwrap.json` / `yarn.lock` / `pnpm-lock.yaml` の順）。無ければエラー。package.json に `workspaces` があってもエラー。
+2. package.json・ロックファイル・`.npmrc` の内容、OS と arch、bun の版からキーを作る。置き場は `<cache>/deps/<key>`。
+   - `<cache>` は `VUE_PREVIEW_CACHE_DIR`、なければ Windows は `%LOCALAPPDATA%\vue-preview`、それ以外は `$XDG_CACHE_HOME/vue-preview`（既定 `~/.cache/vue-preview`）。
+3. 完了の印（`.vue-preview-ok`）があれば、その mtime を更新して使う。無ければ一時ディレクトリへ 3 つのファイルをコピーする。そこで自分自身を `BUN_BE_BUN=1` の bun CLI として起動し、`install --frozen-lockfile --ignore-scripts --linker hoisted` を実行する。終わったら rename で置く。
+   - rename に負けたとき（同時実行）は、先に置かれたほうを使う。
+   - install のあと、30 日使われていないエントリを消す。
+4. `NODE_PATH=<dir>/node_modules` と `VUE_PREVIEW_DEPS_DIR=<dir>` を付けて、同じ引数で自分を起動し直す。`NODE_PATH` は起動時にしか読まれないためです。
+5. 起動し直したプロセスでは、ライブラリをキャッシュの package.json を起点に解決する。プロジェクトのファイルからの bare import は、まずそのファイルから解決し、解決できなければキャッシュから解決する。pt 定義のように native に import するファイルは、`NODE_PATH` で解決される。
 
 ### SFC のコンパイル（`compile.ts`）
 
@@ -154,6 +175,7 @@ PrimeVue の Portal は `mounted` になるまで何も描画しません。そ�
 ## スコープ外（提案として REPORT.md に記録）
 
 - pike との統合、常駐モード（`serve`）、`inspect` サブコマンド
-- Windows / WSL / musl 向けのビルド
+- musl（Alpine）と linux-arm64 / darwin-x64 向けのビルド
+- monorepo（workspaces）の依存キャッシュ
 - PrimeVue の styled mode、v3 対応
 - Chart などクライアント専用コンポーネントの対応（プレースホルダ表示で可）

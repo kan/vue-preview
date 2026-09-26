@@ -3,7 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { loadProjectModules } from './load-project-modules';
+import { DEPS_DIR_ENV, ensureDepsCache, projectHasVue } from './deps-cache';
+import { loadProjectModules, relPosix } from './load-project-modules';
 import { ComponentGraph } from './resolve-components';
 import { buildTailwind, inlineUrls, resolveCssEntry } from './css';
 import { buildHtml } from './html';
@@ -42,18 +43,36 @@ async function main() {
   const lap = (name: string, since: number) => (timings[name] = Math.round((performance.now() - since) * 10) / 10);
 
   const root = path.resolve(values.root ?? process.cwd());
+
+  // --- dependency source -----------------------------------------------------
+  // Without a usable node_modules in the project, install the locked dependencies
+  // into the cache. NODE_PATH is only read at startup, so re-run ourselves with it
+  // pointing there (REPORT V7); the child finds the directory in DEPS_DIR_ENV.
+  const cacheDir = process.env[DEPS_DIR_ENV] || null;
+  if (!cacheDir && !projectHasVue(root)) {
+    try {
+      process.exit(await rerunWithNodePath(ensureDepsCache(root, (m) => console.error(m))));
+    } catch (e) {
+      console.error(`vue-preview: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  }
+
   const { config, file: configFile } = loadConfig(root);
   const warnings: string[] = [];
   const warn = (m: string) => void (warnings.includes(m) || warnings.push(m));
   const deps = new Set<string>();
-  const addDep = (abs: string) => deps.add(path.relative(root, abs));
+  // libraries (the project's node_modules, or the dependency cache's) are not the project's files
+  const addDep = (abs: string) => {
+    if (!abs.split(/[\\/]/).includes('node_modules')) deps.add(relPosix(root, abs));
+  };
   if (configFile) addDep(configFile);
 
   const aliases = resolveAliases(root, config);
 
   // --- module loading --------------------------------------------------------
   let t = performance.now();
-  const mods = await loadProjectModules(root);
+  const mods = await loadProjectModules(root, cacheDir);
   const { vue, ssr } = mods;
   let primevue: any = null;
   let pt: any = undefined;
@@ -146,7 +165,7 @@ async function main() {
     const tw = await buildTailwind(mods, config.tailwind!.entry, body + teleports, warn);
     if (tw) {
       css.push({ label: 'tailwind', css: tw.css });
-      tw.deps.filter((d) => !d.includes('node_modules')).forEach(addDep);
+      tw.deps.forEach(addDep);
       tailwindInfo = { candidates: tw.candidates, extractor: tw.extractor };
     }
   }
@@ -162,10 +181,24 @@ async function main() {
 
   if (values.timings) console.error(JSON.stringify({ timings, tailwind: tailwindInfo, resolved: mods.resolved }));
   const output = values.json
-    ? JSON.stringify({ html, deps: [...deps].sort(), warnings, timings, tailwind: tailwindInfo, resolved: mods.resolved }, null, 2)
+    ? JSON.stringify({ html, deps: [...deps].sort(), warnings, modules: mods.source, timings, tailwind: tailwindInfo, resolved: mods.resolved }, null, 2)
     : html;
   if (values.out) fs.writeFileSync(values.out, output);
   else process.stdout.write(output);
+}
+
+/** Run this same command again with `dir`'s node_modules on NODE_PATH; resolves to its exit code. */
+async function rerunWithNodePath(dir: string): Promise<number> {
+  // A compiled binary sees ['bun', '/$bunfs/root/…' (Windows: 'B:\~BUN\root\…'), ...args];
+  // under `bun src/cli.ts` the script path must be passed again.
+  const compiled = /\$bunfs|~BUN/.test(Bun.main);
+  const cmd = [process.execPath, ...(compiled ? [] : [Bun.main]), ...Bun.argv.slice(2)];
+  const nodePath = [path.join(dir, 'node_modules'), process.env.NODE_PATH].filter(Boolean).join(path.delimiter);
+  const child = Bun.spawn(cmd, {
+    env: { ...process.env, NODE_PATH: nodePath, [DEPS_DIR_ENV]: dir },
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+  return child.exited;
 }
 
 main().catch((e) => {

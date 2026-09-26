@@ -8,6 +8,19 @@ services:
       - ./dist:/opt/vue-preview:ro
       - ./out:/out
     command: sleep infinity
+  # fixture-app without its node_modules (the app volume leaves only an empty
+  # mount point on the host): vue-preview installs into the dependency cache (REPORT V7)
+  bare:
+    image: node:22
+    working_dir: /app
+    environment:
+      VUE_PREVIEW_CACHE_DIR: /cache
+    volumes:
+      - ./fixture-app:/app
+      - bare_cache:/cache
+      - ./dist:/opt/vue-preview:ro
+      - ./out:/out
+    profiles: [bare]
   bun:
     image: oven/bun:1
     working_dir: /tool
@@ -18,3 +31,4 @@ services:
     profiles: [build]
 volumes:
   app_node_modules:
+  bare_cache:

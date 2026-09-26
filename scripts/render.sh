@@ -5,7 +5,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 name=$(basename "$1" .vue)
-docker compose exec -T app /opt/vue-preview/vue-preview render "$@" --root /app --json --out "/out/$name.json"
+docker compose exec -T app /opt/vue-preview/vue-preview-linux-x64 render "$@" --root /app --json --out "/out/$name.json"
 python3 - "out/$name.json" "out/$name.html" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))

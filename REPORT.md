@@ -21,6 +21,7 @@
 | V4 PrimeVue v4 unstyled + pt の SSR | **条件付きで成立** | DataTable は問題なし。Dialog は Portal が SSR で空になるため、Portal にパッチを当てる必要がある |
 | V5 CSS インライン化 | **成立** | scoped / global / Tailwind v4（oxide ネイティブも可）/ primeicons の data URI 化 |
 | V6 出力とパフォーマンス | **成立** | 外部リクエスト 0 件。Vite との画素差分は 0〜0.04%。1 回あたり約 0.6〜1.0 秒 |
+| V7 node_modules が無いときの依存キャッシュ | **成立** | ロックファイルから埋め込みの bun で入れ、`NODE_PATH` 付きで起動し直す。Windows 版でも描けた |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -37,7 +38,7 @@
 docker compose up -d app
 docker compose exec app npm install          # node_modules は named volume の中だけ
 scripts/build.sh                                   # = docker compose run --rm bun bun build src/cli.ts --compile --compile-autoload-package-json ...
-docker compose exec app /opt/vue-preview/vue-preview render src/components/UserPage.vue --root /app --json > out/UserPage.json
+docker compose exec app /opt/vue-preview/vue-preview-linux-x64 render src/components/UserPage.vue --root /app --json > out/UserPage.json
 scripts/render.sh src/components/UserPage.vue      # 補助: JSON と HTML を out/ に書き出し、warnings/deps/timings を表示
 ```
 
@@ -287,6 +288,40 @@ Vite 側の比較ページ（`compare.html`）は fixture の値を props とし
 
 ---
 
+## V7: プロジェクトに node_modules が無いときの依存キャッシュ
+
+検証日: 2026-09-26（Linux x64 の `node:22` / `debian:bookworm-slim`、Windows 11 のホスト）
+
+**結果: 成立**（ロックファイルから埋め込みの bun で入れ、`NODE_PATH` 付きで自分を起動し直す）
+
+pike から呼ぶとき、node_modules がコンテナの中にしか無い構成（DESIGN の前提そのもの）では、ホストのシェルから実行できません。そこで、プロジェクトで `vue` を解決できないときは、ロックファイルどおりの依存をキャッシュへ入れて使うようにしました。
+
+### 根拠
+- **コンパイル済みバイナリは `BUN_BE_BUN=1` で bun CLI として動く。** node と npm の無い `debian:bookworm-slim` で `BUN_BE_BUN=1 vue-preview install --frozen-lockfile` が通りました。`package-lock.json` を移行し、fixture-app と同じ版（vue 3.5.43 / primevue 4.5.5 / tailwindcss 4.3.3）が入ります。
+- ネイティブ依存は、実行したホスト向けのものが入ります（Linux は `oxide-linux-x64-gnu`、Windows は `oxide-win32-x64-msvc`）。
+- **キャッシュの node_modules は `NODE_PATH` で解決できる。** プロジェクトのファイル（pt の preset）が native に import する `vue` / `primevue/*` と、その先のネストした依存の両方を解決できました。`--compile-autoload-package-json` は、ここでも必須です。
+- e2e では、node_modules の無い `bare` コンテナで描いた HTML が、プロジェクトの node_modules で描いた HTML と**バイト単位で一致**しました（UserPage / UserTable）。
+- Windows 版（`--target=bun-windows-x64` のクロスビルド）も、Windows のホストで fixture-app を描けました。UserTable は Linux と同じ HTML になりました。UserPage は日付の表記（`toLocaleDateString` がロケールに従う）だけが違いました。scoped の hash は、ルート相対パスの区切りを `/` にそろえたので、OS をまたいで一致します。
+
+### ハマりどころ（想定との違い）
+- **実行中に `process.env.NODE_PATH` を設定しても解決に反映されない。** 起動時にしか読まれないため、`NODE_PATH` と `VUE_PREVIEW_DEPS_DIR` を付けて自分を起動し直しています。
+- **Bun の実行時プラグイン（`Bun.plugin` の `onResolve`）は、コンパイル済みバイナリの動的 `import()` では呼ばれない。** 解決をフックする案は採れませんでした。
+- **CA 証明書の無い環境では、install が何も出力せずに失敗した**（`debian:bookworm-slim` の素の状態）。`ca-certificates` を入れると通りました。公式の `node` イメージと通常のホストには入っています。
+
+### 計測値
+| 環境 | 初回（install 込み） | 2 回目以降 |
+| --- | --- | --- |
+| WSL2 の Docker、`/mnt/c` 上 | 22〜29 秒（install のみ） | 通常の描画と同じ |
+| Windows 11 のホスト | 8.7 秒 | 0.56 秒 |
+
+- 起動し直す分のコストは、2 回目以降の 0.56 秒に含まれています。
+
+### 仕様として決めたこと
+- ロックファイルが無いとき、ルートの package.json に `workspaces` があるとき（monorepo）はエラーにします。版のずれた描画は出しません。
+- キャッシュのキーは、package.json・ロックファイル・`.npmrc` の内容、OS と arch、bun の版から作ります。一時ディレクトリへ入れてから rename するので、同時に実行されても中途半端なキャッシュは残りません。30 日使われなかったエントリは、次に install したときに消します。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -306,7 +341,8 @@ Vite 側の比較ページ（`compare.html`）は fixture の値を props とし
 
 - `tool/src/`
   - `cli.ts`: 全体の流れと計測
-  - `load-project-modules.ts`: V1
+  - `load-project-modules.ts`: V1 / V7
+  - `deps-cache.ts`: V7
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3
