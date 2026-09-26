@@ -5,6 +5,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { DEPS_DIR_ENV, ensureDepsCache, projectHasVue } from './deps-cache';
 import { loadProjectModules, relPosix } from './load-project-modules';
+import { decoratePlaceholders, PLACEHOLDER_CSS, plainPlaceholders } from './placeholder';
 import { ComponentGraph } from './resolve-components';
 import { buildTailwind, inlineUrls, resolveCssEntry } from './css';
 import { buildHtml } from './html';
@@ -63,7 +64,10 @@ async function main() {
   // keys the config file leaves out are inferred from tsconfig / vite.config / the app entry (REPORT V8 / V9)
   const { config, aliases, detected, deps: detectDeps } = completeConfig(root, explicit);
   const warnings: string[] = [];
-  const warn = (m: string) => void (warnings.includes(m) || warnings.push(m));
+  const warn = (msg: string) => {
+    const m = plainPlaceholders(msg); // a placeholder in a Vue warning: its full expression
+    if (!warnings.includes(m)) warnings.push(m);
+  };
   const deps = new Set<string>();
   // libraries (the project's node_modules, or the dependency cache's) are not the project's files
   const addDep = (abs: string) => {
@@ -134,7 +138,7 @@ async function main() {
     }
   }
   const ctx: any = {};
-  const body = await ssr.renderToString(app, ctx);
+  const body = decoratePlaceholders(await ssr.renderToString(app, ctx));
   lap('ssr.firstRender', t);
   if (process.env.VUE_PREVIEW_BENCH_SSR) {
     // second render of the same app shape: JIT-warm SSR cost (resident-mode estimate)
@@ -143,13 +147,13 @@ async function main() {
     lap('ssr.secondRender', t2);
   }
   const teleports = Object.entries<string>(ctx.teleports ?? {})
-    .map(([to, html]) => `<!-- teleport:${to} -->${html}`)
+    .map(([to, html]) => `<!-- teleport:${to} -->${decoratePlaceholders(html)}`)
     .join('\n');
   lap('ssr', t);
 
   // --- CSS -------------------------------------------------------------------
   t = performance.now();
-  const css: { label: string; css: string }[] = [];
+  const css: { label: string; css: string }[] = [{ label: 'vue-preview', css: PLACEHOLDER_CSS }];
   const twEntry = config.tailwind?.entry ? resolveCssEntry(mods, config.tailwind.entry) : null;
   for (const g of config.globalCss ?? []) {
     let file: string;

@@ -3,7 +3,7 @@
 Vue SFC を簡易レンダリングし、**CSS をすべてインライン化した 1 枚の HTML** を出力する CLI です（PoC）。
 ADE「pike」から外部ツールとして呼び出し、人間向けのプレビューに使うことを想定しています。
 
-- ユーザーの `<script>` / `<script setup>` は**実行しません**。値は fixture（`*.preview.json`）とプレースホルダ（`{{ user.name }}`）から供給します。
+- ユーザーの `<script>` / `<script setup>` は**実行しません**。値は fixture（`*.preview.json`）とプレースホルダから供給します。プレースホルダは参照式の末尾（`data[0].user.name` なら `{{ name }}`）を表示し、ポイントすると参照式の全体が出ます。
 - `vue` や `primevue` などのライブラリは、**対象プロジェクトの node_modules** から実行時に読み込みます。node_modules が無いときは、ロックファイルどおりの版を自前のキャッシュへ入れて使います。
 - 対象: Vue 3.5 / PrimeVue v4（unstyled + pass-through）/ Tailwind CSS v4 / primeicons
 - 出力された HTML は外部リソースを一切読み込みません。フォントも data URI で埋め込んでいます。

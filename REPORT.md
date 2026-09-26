@@ -25,6 +25,7 @@
 | V8 設定ファイルが無いプロジェクト | **成立** | 書かれていないキーをエントリ（`src/main.ts`）の静的な読み取りで補う。PrimeVue を入れ忘れて真っ白になるのを防ぐ |
 | V9 vite.config にしか無い alias | **成立** | tsconfig に `paths` が無ければ、vite.config の `resolve.alias` をテキストとして読む |
 | V10 グローバル登録と自動 import の子コンポーネント | **成立** | エントリの `app.component(...)` と `components.d.ts` から、タグ名と定義元の対応を作る |
+| V11 プレースホルダの表示 | **成立** | 参照式の末尾だけを表示し、全体はホバー（`title`）で出す |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -403,6 +404,34 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V11: プレースホルダの表示
+
+検証日: 2026-09-26（V8 と同じ業務アプリ）
+
+**結果: 成立**（参照式の末尾だけを表示し、全体はホバーで出す）
+
+### きっかけ
+- プレースホルダは参照式をそのまま表示していたので、`{{ groups[0].items[0].name }}` のように長くなり、画面の見た目が崩れていました。
+
+### 方式
+- プレースホルダの文字列化では、参照式を私用領域の文字（U+E000 / U+E001）で挟んだ印を返します。SSR の後で HTML を 1 回走査し、印を置き換えます。
+  - テキストの中は `<span class="vp-ph" title="groups[0].items[0].name">{{ name }}</span>` にします。
+  - 属性値の中はホバーを付けられないので、`{{ name }}` だけにします。
+- SSR は印の文字をそのまま通し、参照式の中の `"` などはテキストとして HTML エスケープ済みです。そのため `title` にそのまま入れられます。
+- 警告の文面（Vue の警告が値を含む場合）では、印を `{{ 全体 }}` に戻します。
+- span を入れられない場所では、`{{ 末尾 }}` の文字だけにします。
+  - `<textarea>` の中：中身はマークアップではなく文字なので、span の文字列がそのまま表示されてしまいます。
+  - `<svg>` の中：HTML の span は SVG の未知の要素になり、描画されません。
+- 参照式は、SSR のテキストとしてはエスケープ済みですが、`v-html` 経由ではエスケープされていません。そこでいったんエンティティを戻し、属性とテキストのそれぞれに合わせてエスケープし直します。
+- 添字も不明な値（`labels[status]`）では、添字のプレースホルダの印を外して `labels[status]` の参照式にします。印を入れ子にすると、対応が崩れて印の文字が HTML に残ります。
+- 末尾は `.` で区切ったいちばん後ろです。ただし `row["user.name"]` のような文字列の添字は、引用の中身（`user.name`）をまとめて表示します。
+
+### 根拠
+- e2e では、テキストが `<span ... title="order.items[2].name">{{ name }}</span>`、属性が `data-order="{{ id }}"` になり、出力に印の文字が残らないことを確かめました。
+- 業務アプリでも、`groups[0].items[0].name` が `{{ name }}` と表示され、ポイントすると全体が出ました。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -427,6 +456,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `detect-config.ts`: V8
   - `detect-config.ts`（`viteAliases`）/ `text-scan.ts`: V9
   - `detect-config.ts`（`entryComponents` / `dtsComponents`）/ `resolve-components.ts`（`resolveGlobalTag`）: V10
+  - `placeholder.ts`（`decoratePlaceholders`）: V11
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3

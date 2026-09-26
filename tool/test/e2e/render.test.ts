@@ -69,8 +69,10 @@ describe('UserPage (nested components, named slots)', () => {
 describe('edge cases', () => {
   test('script is not executed; placeholders iterate and stringify', () => {
     const r = load('PlaceholderDemo');
-    expect(r.html).toContain('{{ order.items[2].name }}');
-    expect(r.html).toContain('data-order="{{ order.id }}"');
+    // text: the last segment, with the full expression on hover; attributes: the last segment
+    expect(r.html).toContain('<span class="vp-ph" title="order.items[2].name">{{ name }}</span>');
+    expect(r.html).toContain('data-order="{{ id }}"');
+    expect(r.html).not.toMatch(/[]/);
     expect(r.warnings.some((w) => w.includes("'formatYen'") && w.includes('not executed'))).toBe(true);
   });
   test('circular imports become a stub', () => {
