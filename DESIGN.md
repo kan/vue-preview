@@ -49,7 +49,7 @@ vue-preview --version
     "config": { "file": null, "detected": ["globalCss", "tailwind", "primevue"] },
     "inputs": {
       "props": [{ "name": "rows", "types": ["Array"] }, { "name": "compact", "types": ["Boolean"], "default": false }],
-      "values": [{ "name": "mode" }, { "name": "open", "default": false }],
+      "values": [{ "name": "mode" }, { "name": "open", "default": false }, { "name": "t", "origin": "call" }],
       "fixture": "src/components/UserTable.preview.json"
     },
     "timings": { "loadModules": 0, "compile": 0, "ssr": 0, "css": 0, "total": 0 },
@@ -62,7 +62,7 @@ vue-preview --version
   - `modules`: ライブラリの出どころ。`{ "kind": "project" }` か `{ "kind": "cache", "dir": ... }`。
   - `inputs`: fixture でルートコンポーネントに与えられるもの（REPORT V12）。呼び出し側（pike）は、これから値の入力フォームを作る。
     - `props`: 宣言された props。型と、静的に読めた既定値（`default`）。
-    - `values`: props 以外にテンプレートが参照した識別子（import を除く）。描画中に記録するので、実際に使われた順に並ぶ。静的に読めた初期値（`ref(false)` など）があれば `default`。`<script setup>` で定義した関数（`setup-const` で静的な値でないもの）は JSON で与えられないので除く。
+    - `values`: props 以外にテンプレートが参照した識別子（import を除く）。描画中に記録するので、実際に使われた順に並ぶ。静的に読めた初期値（`ref(false)` など）があれば `default`。`<script setup>` で定義した関数（`setup-const` で静的な値でないもの）は JSON で与えられないので除く。関数呼び出しの戻り値から受け取った名前（`const { t } = useI18n()`、`const store = useStore()`。`ref` / `computed` などのリアクティビティの呼び出しは除く）には `origin: "call"` を付ける。composable の関数やストアが多く、呼び出し側は畳んで見せてよい。
     - `fixture`: 使った fixture（ルート相対。ルートの外なら `../` で始まる）。無ければ null。
   - `html` / `deps` / `warnings` / `modules` / `inputs` が契約です。それ以外は PoC の計測用です。
 - 依存キャッシュを初めて作るときは、その旨を stderr に 1 行出す（stdout は出力専用）。

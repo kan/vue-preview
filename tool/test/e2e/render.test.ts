@@ -95,7 +95,8 @@ describe('inputs: what a fixture can give the root component (REPORT V12)', () =
       { name: 'order', types: ['Object'] },
       { name: 'showNote', types: ['Boolean'] },
     ]);
-    expect(r.inputs.values.map((v: { name: string }) => v.name)).toEqual(['mode']);
+    // `mode` is state (ref); `locale` came from a composable, so it is marked
+    expect(r.inputs.values).toEqual([{ name: 'mode' }, { name: 'locale', origin: 'call' }]);
     expect(r.inputs.fixture).toBeNull();
   });
   test('the fixture in use', () => {

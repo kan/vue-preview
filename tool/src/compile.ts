@@ -36,6 +36,8 @@ export interface CompiledSfc {
   propsObjectNames: string[];
   /** statically evaluable initial values (`ref(1)`, `const x = {...}`) */
   literals: Record<string, unknown>;
+  /** Names received from a call other than a reactivity API (`const { t } = useI18n()`). */
+  fromCalls: Set<string>;
   /** component tags used in the template */
   templateComponents: string[];
   styles: { css: string; scoped: boolean }[];
@@ -65,6 +67,7 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
   const propAliases: Record<string, string> = {};
   const propsObjectNames: string[] = [];
   const literals: Record<string, unknown> = {};
+  const fromCalls = new Set<string>();
 
   if (descriptor.script || descriptor.scriptSetup) {
     const script = sfc.compileScript(descriptor, {
@@ -88,8 +91,9 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
     const analysed = analyseGenerated(sfc, script.content, rel, warnings);
     props = analysed.props;
     emits = analysed.emits;
-    if (script.scriptSetupAst) analyseSetup(script.scriptSetupAst as any[], propAliases, propsObjectNames, literals);
-    if (script.scriptAst) analyseSetup(script.scriptAst as any[], propAliases, propsObjectNames, literals);
+    const out = { propAliases, propsObjectNames, literals, fromCalls };
+    if (script.scriptSetupAst) analyseSetup(script.scriptSetupAst as any[], out);
+    if (script.scriptAst) analyseSetup(script.scriptAst as any[], out);
   }
 
   // Route every binding through $setup so the ctx proxy decides the value
@@ -155,6 +159,7 @@ export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
     propAliases,
     propsObjectNames,
     literals,
+    fromCalls,
     templateComponents: [...templateComponents],
     styles,
     warnings,
@@ -258,7 +263,7 @@ function analyseGenerated(sfc: ProjectModules['sfc'], content: string, rel: stri
   const exp = ast.program.body.find((n: any) => n.type === 'ExportDefaultDeclaration');
   let obj = exp?.declaration;
   if (obj?.type === 'CallExpression') obj = obj.arguments[0]; // _defineComponent({...})
-  if (obj?.type === 'TSAsExpression') obj = obj.expression;
+  obj = unwrapExpression(obj);
   if (!obj || obj.type !== 'ObjectExpression') return { props, emits };
   for (const p of obj.properties) {
     if (p.type !== 'ObjectProperty') continue;
@@ -393,31 +398,79 @@ export function evalLiteral(node: any): unknown {
   return UNKNOWN;
 }
 
+/** The called function's name, or undefined when `n` is not a call: `ref(...)` and `Vue.ref(...)` are both `ref`. */
 function calleeName(n: any): string | undefined {
-  if (n?.type === 'CallExpression') return n.callee.type === 'Identifier' ? n.callee.name : undefined;
+  if (n?.type !== 'CallExpression') return undefined;
+  const c = n.callee;
+  if (c.type === 'Identifier') return c.name;
+  if (c.type === 'MemberExpression' && c.property.type === 'Identifier') return c.property.name;
 }
 
-function analyseSetup(body: any[], propAliases: Record<string, string>, propsObjectNames: string[], literals: Record<string, unknown>) {
+/** Reactivity calls whose first argument is the initial value (`ref(false)`): read into `literals`. */
+const LITERAL_CALLS = new Set(['ref', 'shallowRef', 'reactive', 'shallowReactive', 'readonly']);
+
+/**
+ * Calls whose result is the component's own state, not something handed over by a composable.
+ * Any other call marks its names `fromCalls`. **An approximation**: a project's own state helper
+ * (`useLocalStorage`) is marked too; the mark only lets callers tuck the names away.
+ */
+const STATE_CALLS = new Set([
+  ...LITERAL_CALLS,
+  'shallowReadonly', 'computed', 'toRef', 'toRefs', 'customRef', 'markRaw', 'toRaw', 'toValue', 'unref', 'useModel',
+  'defineProps', 'withDefaults', 'defineModel',
+]);
+
+/** Strip type-only wrappers (`x!`, `x as T`, `x satisfies T`, `<T>x`) and `await`. */
+function unwrapExpression(n: any): any {
+  while (['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSTypeAssertion', 'AwaitExpression'].includes(n?.type)) {
+    n = n.type === 'AwaitExpression' ? n.argument : n.expression;
+  }
+  return n;
+}
+
+/** The local names a declarator pattern binds (`a`, `{ a, b: c, ...d }`, `[a, b]`). */
+function patternNames(id: any): string[] {
+  switch (id?.type) {
+    case 'Identifier':
+      return [id.name];
+    case 'ObjectPattern':
+      return id.properties.flatMap((p: any) => patternNames(p.type === 'RestElement' ? p.argument : p.value));
+    case 'ArrayPattern':
+      return id.elements.flatMap((e: any) => patternNames(e?.type === 'RestElement' ? e.argument : e));
+    case 'AssignmentPattern':
+      return patternNames(id.left);
+    default:
+      return [];
+  }
+}
+
+/** What `analyseSetup` collects from `<script setup>` / `<script>` (fields of `CompiledSfc`). */
+type SetupAnalysis = Pick<CompiledSfc, 'propAliases' | 'propsObjectNames' | 'literals' | 'fromCalls'>;
+
+function analyseSetup(body: any[], out: SetupAnalysis) {
   for (const stmt of body) {
     const decl = stmt.type === 'ExportNamedDeclaration' ? stmt.declaration : stmt;
     if (decl?.type !== 'VariableDeclaration') continue;
     for (const d of decl.declarations) {
-      if (d.id.type !== 'Identifier' || !d.init) continue;
-      const local = d.id.name;
-      let init = d.init;
-      if (init.type === 'TSAsExpression') init = init.expression;
+      const init = unwrapExpression(d.init);
+      if (!init) continue;
       const callee = calleeName(init);
+      // received from a call (`const { t } = useI18n()`, `const store = useStore()`, `await fetchX()`):
+      // functions and stores a fixture can hardly give (REPORT V12)
+      if (init.type === 'CallExpression' && !STATE_CALLS.has(callee ?? '')) patternNames(d.id).forEach((n) => out.fromCalls.add(n));
+      if (d.id.type !== 'Identifier') continue;
+      const local = d.id.name;
       if (callee === 'defineProps' || (callee === 'withDefaults' && calleeName(init.arguments[0]) === 'defineProps')) {
-        propsObjectNames.push(local);
+        out.propsObjectNames.push(local);
       } else if (callee === 'defineModel') {
         const first = init.arguments[0];
-        propAliases[local] = first?.type === 'StringLiteral' ? first.value : 'modelValue';
-      } else if (callee && ['ref', 'shallowRef', 'reactive', 'shallowReactive', 'readonly'].includes(callee)) {
+        out.propAliases[local] = first?.type === 'StringLiteral' ? first.value : 'modelValue';
+      } else if (callee && LITERAL_CALLS.has(callee)) {
         const v = init.arguments.length === 0 ? undefined : evalLiteral(init.arguments[0]);
-        if (v !== UNKNOWN) literals[local] = v;
+        if (v !== UNKNOWN) out.literals[local] = v;
       } else if (decl.kind === 'const') {
         const v = evalLiteral(init);
-        if (v !== UNKNOWN) literals[local] = v;
+        if (v !== UNKNOWN) out.literals[local] = v;
       }
     }
   }

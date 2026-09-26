@@ -447,6 +447,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 - props は、SFC の静的解析（V2）で得た宣言をそのまま出します。型と、リテラルの既定値です。
 - props 以外の値は、ルートの ctx Proxy が識別子を解決するときに記録します。import の値と props を除いた、fixture が埋められる名前です（`onInput`）。静的に読めない computed や、`onMounted` で入れる ref もここに並びます。
 - 描画中に記録するので、並ぶのは実際に参照された名前だけです。`v-if` で描かれなかった部分の名前は、条件を満たす値を与えて描き直すと現れます。
+- 関数呼び出しの戻り値から受け取った名前（`const { t } = useI18n()`、`const store = useProjectStore()`）には `origin: "call"` を付けます。pike のコンポーネントで一覧を見たところ、`t` やストア、composable の関数が普通の値と同じ並びに出て、JSON では意味のある値を与えにくい欄になっていました。`ref` / `computed` などのリアクティビティの呼び出しはコンポーネント自身の状態なので、印を付けません。
 
 ### 根拠
 - e2e では、PlaceholderDemo の props（`order`、`showNote`）と値（`mode`）、UserTable が使った fixture を確かめました。

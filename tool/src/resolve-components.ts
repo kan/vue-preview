@@ -78,7 +78,12 @@ export class ComponentGraph {
     const settable = (name: string) => sfc?.bindings[name] !== 'setup-const' || name in (sfc?.literals ?? {});
     return {
       props: Object.entries(sfc?.props ?? {}).map(([name, p]) => ({ name, types: p.types, ...withDefault(p.default) })),
-      values: [...this.rootInputs].filter(settable).map((name) => ({ name, ...withDefault(sfc?.literals[name]) })),
+      // `origin: 'call'`: received from a composable (`const { t } = useI18n()`); callers may tuck these away
+      values: [...this.rootInputs].filter(settable).map((name) => ({
+        name,
+        ...withDefault(sfc?.literals[name]),
+        ...(sfc?.fromCalls.has(name) ? { origin: 'call' } : {}),
+      })),
     };
   }
 
