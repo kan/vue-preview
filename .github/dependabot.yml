@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # tool/ の npm の依存を上げる。どの PR も package-lock.json を触り、1 つをマージすると残りが
+  # 衝突するので、1 つの PR にまとめる。
+  # fixture-app/ は描画を確かめる対象のプロジェクトなので、版の更新は入れない（Dependabot alerts は
+  # 依存グラフから fixture-app/ も見る）。
+  #
+  # cooldown: 公開から数日たった版だけを取る。壊れた版や乗っ取られた版は、たいてい数日で
+  # 取り下げられる。security update はこの待ちの対象外。
+  - package-ecosystem: npm
+    directory: /tool
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      npm:
+        patterns:
+          - "*"
+  # .github/workflows の action を上げる。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
