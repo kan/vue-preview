@@ -10,6 +10,8 @@ workflows:
     '.github/workflows/release.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/download-artifact@v8.0.2'
+    '.github/workflows/tagpr-label.yml': []
+    '.github/workflows/tagpr.yml': []
     '.github/workflows/verify-lockfile.yml':
         - 'actions/checkout@v7.0.1'
 dependencies:

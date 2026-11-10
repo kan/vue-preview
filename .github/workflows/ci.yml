@@ -19,6 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - run: scripts/test-unit.sh
+      - name: Check scripts/tagpr/ against the tagpr workflow pin
+        run: node scripts/tagpr/verify-subtree.mjs
 
   e2e:
     name: Build + E2E (fixture-app in node:22)

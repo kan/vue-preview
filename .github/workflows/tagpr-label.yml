@@ -1,0 +1,26 @@
+name: tagpr-label
+
+# Rebuilds the release pull request when a label is added to or removed from
+# it (tagpr:minor and the like), so that merging it releases the version its
+# labels ask for. The work is done by kan/tagpr-scripts' shared workflow (its
+# copy is scripts/tagpr/.github/workflows/tagpr-label.yml): it marks the release
+# PR draft and starts tagpr.yml with workflow_dispatch on the release branch.
+# See the tagpr-scripts README, "Rebuild the release pull request when its
+# version label changes".
+#
+# pull_request_target runs on main and checks nothing out, so no code from the
+# pull request runs here.
+on:
+  pull_request_target:
+    types: [labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  rebuild:
+    # The same SHA as tagpr.yml. Move both in the pull request that runs git
+    # subtree pull (AGENTS.md, "CI とリリース").
+    uses: kan/tagpr-scripts/.github/workflows/tagpr-label.yml@5798ef5c805057f28d47b7b518c2c1d067f55407
+    permissions:
+      actions: write        # Start tagpr.yml with workflow_dispatch
+      pull-requests: write  # Mark the release PR draft
