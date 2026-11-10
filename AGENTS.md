@@ -7,6 +7,7 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 | [README.md](README.md) | 利用者向けの概要と使い方 |
 | [DESIGN.md](DESIGN.md) | 設計の前提、CLI と設定の仕様、処理の流れ |
 | [REPORT.md](REPORT.md) | 検証項目 V1〜V14 の結果、ハマりどころ、計測値、今後の提案 |
+| [CHANGELOG.md](CHANGELOG.md) | 版ごとの変更点。`## [Unreleased]` がそのまま次のリリースノートになる |
 
 **設計や仕様を変えたら DESIGN.md を更新してください。検証で何かが分かったら REPORT.md に追記してください。**
 
@@ -14,10 +15,12 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 
 ```
 .
-├── AGENTS.md / DESIGN.md / REPORT.md / README.md
+├── AGENTS.md / DESIGN.md / REPORT.md / README.md / CHANGELOG.md
+├── .tagpr                    # tagpr の設定（下の「CI とリリース」）
 ├── docker-compose.yml        # app（node:22 + fixture-app）、bare（node_modules 無しの fixture-app）、bun（ビルド・テスト）
-├── .github/workflows/ci.yml  # unit / build + e2e / Windows / タグでリリース
+├── .github/workflows/        # ci.yml / release.yml / tagpr.yml / tagpr-label.yml / verify-lockfile.yml、actions.lock
 ├── scripts/                  # build.sh / test-unit.sh / e2e.sh / render.sh
+│   └── tagpr/                # kan/tagpr-scripts の git subtree（編集しない）
 ├── dist/                     # ビルドしたバイナリ vue-preview-<target>（app / bare コンテナに /opt/vue-preview としてディレクトリでマウント）
 ├── out/                      # 生成した HTML / JSON の出力先（git 管理外）
 ├── report-assets/            # REPORT.md 用のスクリーンショット
@@ -77,11 +80,51 @@ docker compose exec app npx vite --host 0.0.0.0       # 比較用: http://localh
 
 ## CI とリリース
 
-- `.github/workflows/ci.yml`
-  - push（main）と PR: `unit`（単体テスト）と `e2e`（3 ターゲットのビルド → `npm ci` → e2e）を実行します。成果物として `out/` とバイナリをアップロードします。続いて `windows`（windows-latest で、node_modules の無い fixture-app を Windows 版で描画）を実行します。
-  - `v*` タグの push: 上記が通ったら、3 つのバイナリとそれぞれの `.sha256` を GitHub Release に添付します。`-` を含むタグ（例: `v0.2.0-rc.1`）は prerelease になります。
-- リリース手順: `git tag v0.1.0 && git push origin v0.1.0`。バイナリの `--version` にはタグ名が埋め込まれます。
-  - タグを push できない環境（Claude Code on the web のセッションなど）では、CI を `workflow_dispatch` で実行し、`release_tag` に `v0.1.0` を指定します。テストが通ると、実行したコミットにタグが作られ、リリースが公開されます。
+| workflow | 起動 | 内容 |
+| --- | --- | --- |
+| `ci.yml` | push（main）、PR、`workflow_call` | `unit`（単体テストと `verify-subtree.mjs`）と `e2e`（3 ターゲットのビルド → `npm ci` → e2e）。成果物として `out/` とバイナリ（`vue-preview-binaries`）をアップロードし、続いて `windows`（windows-latest で、node_modules の無い fixture-app を Windows 版で描画）を実行します |
+| `release.yml` | `v*` タグでの `workflow_dispatch`（tagpr から）、`v*` タグの push（手で打ったとき） | タグの CHANGELOG の節を確かめ、`ci.yml` をタグで回し、e2e が作ったバイナリとそれぞれの `.sha256` で GitHub Release を作ります。本文は CHANGELOG のその版の節です。`-` を含むタグ（例: `v0.7.0-rc.1`）は prerelease になり、本文は `## [Unreleased]` です |
+| `tagpr.yml` / `tagpr-label.yml` | push（main）、リリース PR のラベルの変更 | リリース PR を最新に保ち、マージされたらタグを打って `release.yml` を起動します（kan/tagpr-scripts の共通の workflow） |
+| `verify-lockfile.yml` | push（main）、PR | `actions.lock` と各 workflow の `uses:` が食い違っていないかを確かめます |
+
+- **action は完全な版のタグで書き（`actions/checkout@v7.0.1`）、`uses:` を変えたら `gh actions-lock` で `.github/workflows/actions.lock` を更新します。**
+- バイナリの `--version` には ref の名前（リリースではタグ名）が埋め込まれます。版を持つファイルはありません（`tool/package.json` は `private` で版を持たない）。
+
+### リリース手順
+
+**リリースは tagpr のリリース PR をマージして始めます。** CHANGELOG の節の書き換えとタグは、リリース PR とワークフローが行います。**「CHANGELOG に vX.Y.Z を追加」のコミットを手で作らず、タグも手で打ちません**（プレリリースと、打ち直しを除く）。設定は `.tagpr` にあります。
+
+1. **変更を入れる PR で CHANGELOG を書く。** 利用者に届く変更は、その PR で `CHANGELOG.md` の `## [Unreleased]` に足します。この節がそのまま GitHub のリリースノートになります。項目の中のリンクはインラインで書きます（参照形式のリンクの定義は節の外にあるので、リリースノートではリンクになりません）。末尾のリンク定義はリリース PR が版ごとに足すので、手で足しません。
+2. **リリース PR を確かめる。**
+
+   ```sh
+   gh pr list --label tagpr --state open --json number,title,headRefName
+   gh run list --workflow tagpr.yml --branch main -L 3
+   ```
+
+   - 最新の tagpr の run が success であること。失敗した run はリリース PR を draft にします。`release-prepare.mjs` の出力を読み、CHANGELOG を直す PR を main にマージすると作り直されます。
+   - 版（PR のタイトル）が正しいこと。既定は patch で、前回のリリース以降にマージした PR が `enhancement` ラベルを持っていれば minor になります。手で変えるときはリリース PR に `tagpr:minor` / `tagpr:major` のラベルを付けます。`tagpr-label.yml` が作り直すので、その run が success になるのを待ってからマージします。
+   - PR のタイトルの版と CHANGELOG の見出しの版が一致し、Files changed が `CHANGELOG.md`（見出しとリンク定義）だけであること。
+   - 節を直すときは、リリース PR のブランチではなく main の `## [Unreleased]` を直します（ブランチは作り直すたびに main から作られる）。
+   - リリース PR の CI は承認待ち（`action_required`）で止まることがあります（GITHUB_TOKEN が作った PR のため）。そのときは今の head の run を承認します。
+3. **リリース PR をマージする。** `gh pr merge <番号> --squash --delete-branch`。マージの push で走る tagpr の run がタグを打ち、`release.yml` をそのタグで起動します。**タグが打たれるまで、main へほかの PR をマージしません。** run が落ちたときの復旧は、[scripts/tagpr/README.md](scripts/tagpr/README.md) の「The tagpr workflow」に従います。この repo の `release-workflow` は `release.yml` で、`push: tags` でも起動するので、手でタグを push したときは `gh workflow run` を重ねません（同じタグで 2 回走る）。
+4. **Release を確かめる。** 3 つのバイナリと `.sha256` が載り、本文が `node scripts/tagpr/release-notes.mjs vX.Y.Z` の出力と同じであること。
+
+プレリリースは、main のコミットに手でタグを打って push します（`git tag -a -m "Release v0.7.0-rc.1" v0.7.0-rc.1 && git push origin v0.7.0-rc.1`）。
+
+### scripts/tagpr
+
+[kan/tagpr-scripts](https://github.com/kan/tagpr-scripts) を git subtree で取り込んだものです。使い方は同梱の README.md にあります。
+
+- **`scripts/tagpr/` の中は編集しません。** 直すときは kan/tagpr-scripts を直し、こちらへは次で取り込みます（subtree は `commit.gpgsign` を見ないので `-S` を付ける）。
+
+  ```sh
+  git subtree pull -S --prefix=scripts/tagpr https://github.com/kan/tagpr-scripts.git main --squash
+  ```
+
+- **同じ PR で、`tagpr.yml` と `tagpr-label.yml` の `uses: kan/tagpr-scripts/...@<SHA>` を上げます**。上げる先は、取り込んだ tagpr-scripts のコミットです（squash のコミットのメッセージにある `git-subtree-split` の SHA）。揃っているかは CI が `node scripts/tagpr/verify-subtree.mjs` で確かめます（`HEAD` を読むので、コミットした後に手でも走らせられる）。
+- **取り込む PR はマージコミットでマージします。** squash すると、subtree が前回の取り込みを見つけられず、次の `git subtree pull` が失敗します。
+- 取り込みは CHANGELOG に書きません（利用者に届く変更ではないため）。
 
 ## 作業ルール
 
@@ -91,3 +134,4 @@ docker compose exec app npx vite --host 0.0.0.0       # 比較用: http://localh
 - 想定した API が存在しない、または挙動が違う場合は、黙って別の方法に切り替えない。何が想定と違ったかを REPORT.md に記録してから、代替案を試す。
 - スコープ外（DESIGN.md 末尾を参照）の事項は、必要だと判断しても REPORT.md に提案として書くだけにする。
 - 小さくコミットする。
+- **main へ直接 push しない。** ブランチを切って PR を作る。tagpr はマージされた PR からリリース PR を組み立てるので、直接 push した変更はリリースの確認から漏れる。利用者に届く変更を入れる PR では、`CHANGELOG.md` の `## [Unreleased]` に項目を足す（「CI とリリース」の「リリース手順」）。
