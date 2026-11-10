@@ -1,0 +1,21 @@
+# tagpr: keeps a release pull request open against main and tags the release
+# when it is merged. The workflow is .github/workflows/tagpr.yml; the release
+# steps are in AGENTS.md ("CI とリリース").
+[tagpr]
+	releaseBranch = main
+	vPrefix = true
+	# vue-preview keeps its version only in Git tags (the binary gets it as
+	# --version at build time; tool/package.json is private and has none). The
+	# next version comes from the release PR's labels: tagpr:minor /
+	# tagpr:major, otherwise a patch release.
+	versionFile = -
+	# CHANGELOG.md is written by hand under "## [Unreleased]";
+	# scripts/tagpr/release-prepare.mjs turns that section into the release's.
+	# scripts/tagpr/ is a git subtree of kan/tagpr-scripts.
+	changelog = false
+	postVersionCommand = node scripts/tagpr/release-prepare.mjs --changelog-only
+	# release.yml creates the GitHub release once the binaries are built and
+	# tested, with the CHANGELOG section as its notes.
+	release = false
+	# A merged pull request labelled enhancement makes the release a minor one.
+	minorLabels = enhancement

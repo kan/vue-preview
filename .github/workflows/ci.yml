@@ -1,16 +1,13 @@
 name: CI
 
+# workflow_call: release.yml runs these jobs on the tag before it publishes, and
+# takes the binaries from the vue-preview-binaries artifact of the e2e job.
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Create this tag (e.g. v0.1.0) on the dispatched commit and publish a release. Leave empty to only test.'
-        required: false
-        default: ''
+  workflow_call:
 
 permissions:
   contents: read
@@ -20,18 +17,19 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - run: scripts/test-unit.sh
+      - name: Check scripts/tagpr/ against the tagpr workflow pin
+        run: node scripts/tagpr/verify-subtree.mjs
 
   e2e:
     name: Build + E2E (fixture-app in node:22)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+      # --version prints the ref name: the tag when release.yml calls this.
       - name: Build binaries (bun container)
-        run: VERSION="${RELEASE_TAG:-$GITHUB_REF_NAME}" scripts/build.sh
-        env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: VERSION="$GITHUB_REF_NAME" scripts/build.sh
       - name: Start app container and install fixture-app deps
         run: |
           docker compose up -d app
@@ -40,12 +38,12 @@ jobs:
         run: scripts/e2e.sh
       - name: Binary smoke test
         run: docker compose exec -T app /opt/vue-preview/vue-preview-linux-x64 --version
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: preview-output
           path: out/
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: vue-preview-binaries
           path: dist/vue-preview-*
@@ -58,8 +56,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: vue-preview-binaries
           path: dist
@@ -75,32 +73,3 @@ jobs:
             console.log(JSON.stringify({ modules: r.modules, warnings: r.warnings, deps: r.deps }));
             process.exit(ok ? 0 : 1);
           "
-
-  release:
-    name: Release
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'v'))
-    needs: [unit, e2e, windows]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: vue-preview-binaries
-          path: dist
-      - name: Package
-        run: |
-          mkdir -p release
-          cp dist/vue-preview-* release/
-          chmod +x release/*
-          (cd release && for f in vue-preview-*; do sha256sum "$f" > "$f.sha256"; done)
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # tag push: the pushed tag / workflow_dispatch: the tag is created on this commit
-          TAG: ${{ inputs.release_tag || github.ref_name }}
-        run: |
-          prerelease=""
-          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$TAG" release/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes $prerelease
