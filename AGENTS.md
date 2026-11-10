@@ -110,7 +110,7 @@ docker compose exec app npx vite --host 0.0.0.0       # 比較用: http://localh
 3. **リリース PR をマージする。** `gh pr merge <番号> --squash --delete-branch`。マージの push で走る tagpr の run がタグを打ち、`release.yml` をそのタグで起動します。**タグが打たれるまで、main へほかの PR をマージしません。** run が落ちたときの復旧は、[scripts/tagpr/README.md](scripts/tagpr/README.md) の「The tagpr workflow」に従います。この repo の `release-workflow` は `release.yml` で、`push: tags` でも起動するので、手でタグを push したときは `gh workflow run` を重ねません（同じタグで 2 回走る）。
 4. **Release を確かめる。** 3 つのバイナリと `.sha256` が載り、本文が `node scripts/tagpr/release-notes.mjs vX.Y.Z` の出力と同じであること。
 
-プレリリースは、main のコミットに手でタグを打って push します（`git tag -a -m "Release v0.7.0-rc.1" v0.7.0-rc.1 && git push origin v0.7.0-rc.1`）。
+プレリリースは、main のコミットに手でタグを打って push します（`git tag -a -m "Release v0.7.0-rc.1" v0.7.0-rc.1 && git push origin v0.7.0-rc.1`）。タグを push できない環境（Claude Code on the web のセッションなど）では、`gh api repos/kan/vue-preview/git/refs -f ref=refs/tags/v0.7.0-rc.1 -f sha=<main のコミット>` でタグを作ります。`release.yml` が起動しなければ、`gh workflow run release.yml --ref v0.7.0-rc.1` で起動します。
 
 ### scripts/tagpr
 
