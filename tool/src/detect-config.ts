@@ -52,7 +52,7 @@ export interface PrimeVueUse {
 
 /** `app.use(PrimeVue, { unstyled: true, pt: Aura, ... })` where `PrimeVue` is `ident`. */
 export function primeVueUse(source: string, ident: string): PrimeVueUse | null {
-  const m = new RegExp(`\\.use\\(\\s*${ident.replace(/\$/g, '\\$')}(?![\\w$])\\s*(,\\s*\\{)?`).exec(source);
+  const m = new RegExp(`\\.use\\(\\s*${ident.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w$])\\s*(,\\s*\\{)?`).exec(source);
   if (!m) return null;
   if (!m[1]) return {};
   const options = balancedBlock(source, m.index + m[0].length - 1) ?? '';

@@ -16,7 +16,9 @@ const fixture = (fixtures[`./components/${name}.preview.json`] ?? {}) as Record<
 // UserPage loads its rows via fetch(); answer with the fixture rows.
 window.fetch = async () => new Response(JSON.stringify(fixture.users ?? []));
 
-const mod: any = await components[`./components/${name}.vue`]();
+const load = components[`./components/${name}.vue`];
+if (typeof load !== 'function') throw new Error(`unknown component: ${name}`);
+const mod: any = await load();
 const declared = Object.keys(mod.default.props ?? {});
 const props = Object.fromEntries(Object.entries(fixture).filter(([k]) => declared.includes(k)));
 const app = createApp({ render: () => h(mod.default, props) });
