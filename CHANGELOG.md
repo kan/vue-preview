@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-10
+
 ### Infrastructure
 
 - リリースを [tagpr](https://github.com/Songmu/tagpr) で行うようにした。リリース PR をマージするとタグが打たれ、テストを通したバイナリが配布される。
@@ -55,6 +57,7 @@
 
 - 最初のリリース。Vue SFC を、CSS をインライン化した 1 枚の HTML にレンダリングする。Linux（x64）のバイナリを配布する。
 
+[0.6.1]: https://github.com/kan/vue-preview/releases/tag/v0.6.1
 [0.6.0]: https://github.com/kan/vue-preview/releases/tag/v0.6.0
 [0.5.0]: https://github.com/kan/vue-preview/releases/tag/v0.5.0
 [0.4.0]: https://github.com/kan/vue-preview/releases/tag/v0.4.0
