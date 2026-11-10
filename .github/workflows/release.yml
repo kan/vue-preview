@@ -1,0 +1,85 @@
+name: release
+
+# tagpr.yml starts this with workflow_dispatch on the tag it pushed (a tag
+# pushed with GITHUB_TOKEN does not trigger push). The push trigger is for a
+# tag pushed by hand (a pre-release such as v0.7.0-rc.1). Either way
+# github.ref is the tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# Each job lists what it needs
+permissions:
+  contents: read
+
+# One run per tag. Not cancelled: a run stopped while publishing would leave
+# a half-done release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Stops before the tests when the tag has no CHANGELOG section.
+  # workflow_dispatch can be started on a branch; release only tags. The other
+  # jobs depend on this one, so this condition guards them all.
+  check:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the CHANGELOG section
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/tagpr/release-notes.mjs "$TAG" > /dev/null
+
+  # The same tests as a push to main, on the tag. The e2e job builds the
+  # binaries (with the tag as --version) and uploads them as
+  # vue-preview-binaries. None of these jobs can write to the repository.
+  ci:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  # Creates the release from the binaries the ci jobs tested. Nothing is
+  # compiled here.
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Create the release
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # For scripts/tagpr/release-notes.mjs and CHANGELOG.md
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: vue-preview-binaries
+          path: dist
+
+      - name: Package
+        run: |
+          mkdir -p release
+          cp dist/vue-preview-* release/
+          chmod +x release/*
+          (cd release && for f in vue-preview-*; do sha256sum "$f" > "$f.sha256"; done)
+
+      # The CHANGELOG.md section of the version ("Unreleased" for a
+      # pre-release); the check job has already checked it.
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          notes="$RUNNER_TEMP/release-notes.md"
+          node scripts/tagpr/release-notes.mjs "$TAG" > "$notes"
+          gh release create "$TAG" release/* --verify-tag --prerelease="$PRERELEASE" \
+            --title "$TAG" --notes-file "$notes"
