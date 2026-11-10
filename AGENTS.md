@@ -82,7 +82,7 @@ docker compose exec app npx vite --host 0.0.0.0       # 比較用: http://localh
 
 | workflow | 起動 | 内容 |
 | --- | --- | --- |
-| `ci.yml` | push（main）、PR、`workflow_call` | `unit`（単体テストと `verify-subtree.mjs`）と `e2e`（3 ターゲットのビルド → `npm ci` → e2e）。成果物として `out/` とバイナリ（`vue-preview-binaries`）をアップロードし、続いて `windows`（windows-latest で、node_modules の無い fixture-app を Windows 版で描画）を実行します |
+| `ci.yml` | push（main）、PR、`workflow_dispatch`（手で再実行するとき）、`workflow_call` | `unit`（単体テストと `verify-subtree.mjs`）と `e2e`（3 ターゲットのビルド → `npm ci` → e2e）。成果物として `out/` とバイナリ（`vue-preview-binaries`）をアップロードし、続いて `windows`（windows-latest で、node_modules の無い fixture-app を Windows 版で描画）を実行します |
 | `release.yml` | `v*` タグでの `workflow_dispatch`（tagpr から）、`v*` タグの push（手で打ったとき） | タグの CHANGELOG の節を確かめ、`ci.yml` をタグで回し、e2e が作ったバイナリとそれぞれの `.sha256` で GitHub Release を作ります。本文は CHANGELOG のその版の節です。`-` を含むタグ（例: `v0.7.0-rc.1`）は prerelease になり、本文は `## [Unreleased]` です |
 | `tagpr.yml` / `tagpr-label.yml` | push（main）、リリース PR のラベルの変更 | リリース PR を最新に保ち、マージされたらタグを打って `release.yml` を起動します（kan/tagpr-scripts の共通の workflow） |
 | `verify-lockfile.yml` | push（main）、PR | `actions.lock` と各 workflow の `uses:` が食い違っていないかを確かめます |

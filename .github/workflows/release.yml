@@ -63,12 +63,10 @@ jobs:
       - uses: actions/download-artifact@v8.0.2
         with:
           name: vue-preview-binaries
-          path: dist
+          path: release
 
       - name: Package
         run: |
-          mkdir -p release
-          cp dist/vue-preview-* release/
           chmod +x release/*
           (cd release && for f in vue-preview-*; do sha256sum "$f" > "$f.sha256"; done)
 
