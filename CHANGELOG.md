@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
 ### Added
 
 - SFC の隣にある [Musea](https://github.com/ubugeeei-prod/vize) の art ファイル（`<Name>.art.vue`）を読むようにした。`--variant <name>` でその variant を描き、`--json` の `variants` に variant の一覧を出す。art ファイルの script は実行しない。fixture は variant で描くときもコンポーネントに当たり、variant が渡した props が優先される。
@@ -63,6 +65,7 @@
 
 - 最初のリリース。Vue SFC を、CSS をインライン化した 1 枚の HTML にレンダリングする。Linux（x64）のバイナリを配布する。
 
+[0.7.0]: https://github.com/kan/vue-preview/releases/tag/v0.7.0
 [0.6.1]: https://github.com/kan/vue-preview/releases/tag/v0.6.1
 [0.6.0]: https://github.com/kan/vue-preview/releases/tag/v0.6.0
 [0.5.0]: https://github.com/kan/vue-preview/releases/tag/v0.5.0
