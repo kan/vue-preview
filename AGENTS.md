@@ -6,7 +6,7 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 | --- | --- |
 | [README.md](README.md) | 利用者向けの概要と使い方 |
 | [DESIGN.md](DESIGN.md) | 設計の前提、CLI と設定の仕様、処理の流れ |
-| [REPORT.md](REPORT.md) | 検証項目 V1〜V17 の結果、ハマりどころ、計測値、今後の提案 |
+| [REPORT.md](REPORT.md) | 検証項目 V1〜V18 の結果、ハマりどころ、計測値、今後の提案 |
 | [CHANGELOG.md](CHANGELOG.md) | 版ごとの変更点。`## [Unreleased]` がそのまま次のリリースノートになる |
 
 **設計や仕様を変えたら DESIGN.md を更新してください。検証で何かが分かったら REPORT.md に追記してください。**
@@ -34,6 +34,7 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 │   │   ├── load-project-modules.ts # プロジェクト（または依存キャッシュ）の node_modules からの解決・import
 │   │   ├── compile.ts              # SFC のコンパイルと静的解析、Vue ヘルパーのシム
 │   │   ├── prop-types.ts           # 型で宣言した props の TS の型（inputs の tsType / options）
+│   │   ├── presets.ts              # props の宣言から作る値の組（inputs の presets、--preset）
 │   │   ├── ctx-proxy.ts            # テンプレートの値の解決
 │   │   ├── placeholder.ts          # プレースホルダ
 │   │   ├── i18n.ts                 # メッセージファイルの探索と読み込み、$t / useI18n() の t

@@ -28,8 +28,8 @@ Vue SFC を受け取り、簡易レンダリングした「CSS インライン�
 ## CLI
 
 ```
-vue-preview render <path> [--root <dir>] [--fixture <file>] [--variant <name>] [--json] [--out <file>]
-                          [--portal teleport|inline|off] [--locale <locale>] [--timings]
+vue-preview render <path> [--root <dir>] [--fixture <file>] [--variant <name>] [--preset <prop=value>]
+                          [--json] [--out <file>] [--portal teleport|inline|off] [--locale <locale>] [--timings]
 vue-preview --version
 ```
 
@@ -52,6 +52,7 @@ vue-preview --version
         { "name": "rows", "types": ["Array"], "tsType": "User[]" },
         { "name": "status", "types": ["String"], "tsType": "'active' | 'invited'", "options": ["active", "invited"], "default": "active" }
       ],
+      "presets": [{ "name": "status=active", "props": { "status": "active" } }, { "name": "status=invited", "props": { "status": "invited" } }],
       "values": [{ "name": "mode" }, { "name": "open", "default": false }, { "name": "t", "origin": "call" }],
       "fixture": "src/components/UserTable.preview.json"
     },
@@ -68,6 +69,10 @@ vue-preview --version
     - `props`: 宣言された props。runtime の型（`types`）と、静的に読めた既定値（`default`）。
       - 型で宣言した props（`defineProps<T>()`、`defineModel<T>()`）には、TS の型を書かれたとおりの文字列で `tsType` に出す（REPORT V17）。import した型の名前（`User[]`）は展開しない。
       - 型がリテラルの union なら、要素を `options` に出す（型エイリアスも辿る）。呼び出し側は select にできる。
+    - `presets`: props の宣言から作った値の組（REPORT V18）。`name` は `prop=値` で、`--preset` に渡す名前。1 つの組は 1 つの props だけを変える。
+      - `options` のある props: 要素ごとに 1 つ（既定値と同じ要素も含む）。
+      - 型が `Boolean` だけの props: 既定値の反対の値を 1 つ（既定値が無ければ `true`）。
+      - ほかの props（配列、オブジェクト、`User | null` など）には作らない。プレースホルダなら、テンプレートの読む式を描いた結果から読み取れるため。
     - `values`: props 以外にテンプレートが参照した識別子（import を除く）。描画中に記録するので、実際に使われた順に並ぶ。静的に読めた初期値（`ref(false)` など）があれば `default`。`<script setup>` で定義した関数（`setup-const` で静的な値でないもの）は JSON で与えられないので除く。関数呼び出しの戻り値から受け取った名前（`const { t } = useI18n()`、`const store = useStore()`。`ref` / `computed` などのリアクティビティの呼び出しは除く）には `origin: "call"` を付ける。composable の関数やストアが多く、呼び出し側は畳んで見せてよい。
     - `fixture`: 使った fixture（ルート相対。ルートの外なら `../` で始まる）。無ければ null。
   - `variants`: 描く SFC の隣にある Musea の art ファイル（`<Name>.art.vue`）の variant の一覧（後述。REPORT V16）。`default` は Musea が最初に見せる variant。art ファイルが無ければ欄ごと出さない。`--variant` の有無によらず出す。
@@ -76,6 +81,7 @@ vue-preview --version
 - 依存を用意できないとき（ロックファイルが無い、workspaces、install の失敗）は、理由を stderr に出して終了コード 1 で終わる。
 - `--portal`: PrimeVue の Portal の扱い（後述）。既定は `teleport`。
 - `--variant`: art ファイルの variant を名前で選んで描く（後述）。省略すると、art ファイルがあっても今までどおりコンポーネントだけを描く。art ファイルが無いときと、その名前の variant が無いときは、warning を出してコンポーネントだけを描く。
+- `--preset`: `inputs.presets` の値の組を名前で選び、fixture の上に重ねて描く（fixture のほかの値は残る）。`--variant` と一緒に指定すると、variant の対象のコンポーネントに重ねる。variant が渡した props は、今までどおり fixture（と preset）より優先される。無い名前なら、warning に値の組の一覧を出し、preset なしで描く。
 - `--locale`: i18n のロケール（後述）。設定の `i18n.locale` より優先する。
 - `--timings`: 計測値を stderr に出す。
 
@@ -169,7 +175,7 @@ cli.ts
 
 1. 親から実際に渡された props（`vnode.props` にキーがある場合のみ）
 2. 解決済みの import（子コンポーネント、ライブラリの値）
-3. fixture の値（ルートコンポーネントのみ。`--variant` のときは variant の対象のコンポーネント）
+3. fixture の値（ルートコンポーネントのみ。`--variant` のときは variant の対象のコンポーネント）。`--preset` の値は fixture に重ねる
 4. `defineProps` / `defineModel` のデフォルト値（リテラルのみ）。Boolean 型でデフォルトがない場合は `false`
 5. 静的に評価できるリテラルの初期値（`ref(false)`、`const labels = { ... }`）
 6. プレースホルダ

@@ -56,7 +56,8 @@ vue-preview render src/components/UserPage.vue --root /app --json --out UserPage
 | `--root <dir>` | プロジェクトルート（`package.json` と `vue-preview.config.json` がある場所）。省略時はカレントディレクトリ |
 | `--fixture <file>` | fixture の JSON。省略時は `<name>.preview.json` を探し、なければプレースホルダだけで描画する |
 | `--variant <name>` | 隣の `<name>.art.vue`（Musea の art ファイル）の variant を名前で選んで描く。省略時はコンポーネントだけを描く |
-| `--json` | `{ html, deps, warnings, modules, inputs, variants, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧（型で宣言した props には TS の型と、リテラルの union なら選択肢も付く）、`variants` は art ファイルの variant の一覧（art ファイルがあるときだけ） |
+| `--preset <prop=value>` | props の宣言から作った値の組（`--json` の `inputs.presets`）を名前で選び、fixture の上に重ねて描く |
+| `--json` | `{ html, deps, warnings, modules, inputs, variants, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧（型で宣言した props には TS の型と、リテラルの union なら選択肢も付く。`presets` は `--preset` で選べる値の組）、`variants` は art ファイルの variant の一覧（art ファイルがあるときだけ） |
 | `--out <file>` | stdout の代わりにファイルへ書き出す |
 | `--portal teleport\|inline\|off` | PrimeVue の Dialog などの描画方法（既定 `teleport`） |
 | `--locale <locale>` | i18n のメッセージに使うロケール（既定 `ja`） |
@@ -102,6 +103,17 @@ vue-preview render src/components/UserTable.vue --root /app --variant Empty
 - art ファイルの script も実行しません。
 - fixture は variant で描くときもコンポーネントに当たります。variant が渡した props（上の `:rows="[]"`）は fixture より優先されます。
 - `args`、`viewport`、`.vue` の中に書く `<art>` はまだ読みません。
+
+### props の値の組（preset）
+
+fixture を書かなくても、props の宣言から作った値の組で描けます。`--json` の `inputs.presets` に一覧が出ます。
+
+```sh
+vue-preview render src/components/StatusBadge.vue --root /app --preset status=suspended
+```
+
+- リテラルの union の props（`status: 'active' | 'invited' | 'suspended'`）は要素ごとに、boolean の props は既定値の反対の値で、1 つずつ組を作ります。
+- 値は fixture の上に重ねます。`--variant` と一緒にも使えます。
 
 ### 設定ファイル `vue-preview.config.json`
 
