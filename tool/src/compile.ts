@@ -6,10 +6,11 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { ProjectModules } from './load-project-modules';
 import { isPlaceholder } from './placeholder';
+import { modelName, propTsTypes, typeFs, type PropTsType } from './prop-types';
 
 export const UNKNOWN = Symbol('unknown');
 
-export interface PropInfo {
+export interface PropInfo extends Partial<PropTsType> {
   types: string[]; // e.g. ['Boolean', 'String']
   default: unknown | typeof UNKNOWN;
 }
@@ -45,6 +46,8 @@ export interface CompiledSfc {
   i18nBindings: Record<string, 't' | 'locale' | 'object'>;
   /** component tags used in the template */
   templateComponents: string[];
+  /** absolute paths of the files read to resolve the prop types (an imported `interface Props`) */
+  typeDeps: string[];
   styles: { css: string; scoped: boolean }[];
   warnings: string[];
 }
@@ -57,9 +60,15 @@ export function scopeIdFor(rel: string) {
 
 /**
  * `source` replaces the file's contents: a variant of a Musea art file is an SFC that exists only
- * in memory (art.ts). Imports still resolve from `file`'s directory.
+ * in memory (art.ts). Imports still resolve from `file`'s directory. `tsTypes` also reads the TS
+ * types of the props (only `inputs` shows them, for the previewed component).
  */
-export function compileSfc(mods: ProjectModules, file: string, source = fs.readFileSync(file, 'utf8')): CompiledSfc {
+export function compileSfc(
+  mods: ProjectModules,
+  file: string,
+  source = fs.readFileSync(file, 'utf8'),
+  { tsTypes = false } = {},
+): CompiledSfc {
   const { sfc } = mods;
   const rel = mods.rel(file);
   const warnings: string[] = [];
@@ -77,16 +86,13 @@ export function compileSfc(mods: ProjectModules, file: string, source = fs.readF
   const literals: Record<string, unknown> = {};
   const fromCalls = new Set<string>();
   const i18nBindings: CompiledSfc['i18nBindings'] = {};
+  const typeDeps = new Set<string>();
 
   if (descriptor.script || descriptor.scriptSetup) {
     const script = sfc.compileScript(descriptor, {
       id,
       inlineTemplate: false,
-      fs: {
-        fileExists: (f: string) => fs.existsSync(f),
-        readFile: (f: string) => fs.readFileSync(f, 'utf8'),
-        realpath: (f: string) => fs.realpathSync(f),
-      },
+      fs: typeFs,
     });
     bindings = { ...(script.bindings ?? {}) } as Record<string, string>;
     delete (bindings as any).__isScriptSetup;
@@ -100,6 +106,20 @@ export function compileSfc(mods: ProjectModules, file: string, source = fs.readF
     const analysed = analyseGenerated(sfc, script.content, rel, warnings);
     props = analysed.props;
     emits = analysed.emits;
+    // the TS types beside the runtime ones (REPORT V17)
+    // files compileScript read to resolve imported types (runtime types, and the TS ones below)
+    for (const d of (script as any).deps ?? []) typeDeps.add(d);
+    const setup = descriptor.scriptSetup;
+    if (tsTypes && setup && script.scriptSetupAst && /^tsx?$/.test(setup.lang ?? '')) {
+      try {
+        const plain = descriptor.script && script.scriptAst ? { content: descriptor.script.content, ast: script.scriptAst as any[] } : null;
+        const found = propTsTypes(mods, file, { content: setup.content, ast: script.scriptSetupAst as any[] }, plain);
+        for (const [k, t] of Object.entries(found.types)) if (props[k]) Object.assign(props[k], t);
+        for (const d of found.deps) typeDeps.add(d);
+      } catch (e) {
+        warnings.push(`${rel}: could not read the TS types of the props: ${(e as Error).message}`);
+      }
+    }
     const out = { propAliases, propsObjectNames, literals, fromCalls, i18nBindings };
     if (script.scriptSetupAst) analyseSetup(script.scriptSetupAst as any[], out);
     if (script.scriptAst) analyseSetup(script.scriptAst as any[], out);
@@ -171,6 +191,7 @@ export function compileSfc(mods: ProjectModules, file: string, source = fs.readF
     fromCalls,
     i18nBindings,
     templateComponents: [...templateComponents],
+    typeDeps: [...typeDeps],
     styles,
     warnings,
   };
@@ -487,8 +508,7 @@ function analyseSetup(body: any[], out: SetupAnalysis) {
       if (callee === 'defineProps' || (callee === 'withDefaults' && calleeName(init.arguments[0]) === 'defineProps')) {
         out.propsObjectNames.push(local);
       } else if (callee === 'defineModel') {
-        const first = init.arguments[0];
-        out.propAliases[local] = first?.type === 'StringLiteral' ? first.value : 'modelValue';
+        out.propAliases[local] = modelName(init);
       } else if (callee && LITERAL_CALLS.has(callee)) {
         const v = init.arguments.length === 0 ? undefined : evalLiteral(init.arguments[0]);
         if (v !== UNKNOWN) out.literals[local] = v;
