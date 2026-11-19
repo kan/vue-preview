@@ -34,6 +34,7 @@ V1〜V6 の検証日: 2026-09-25（V7 以降は各節に書きます）
 | V15 SFC のコンパイルを vize に替える | **不採用** | template のコンパイルは 23ms 縮むが、vize の読み込みが 14ms かかり、wall では差が出ない。バイナリは約 77MB 増える |
 | V16 Musea の art ファイルの variant | **成立** | `<art>` を `<template>` に置き換えた SFC をメモリ上で作って描く。fixture は対象のコンポーネントに当て、variant が渡した props を優先する |
 | V17 props の TS の型を inputs に出す | **成立** | compiler-sfc の `resolveTypeElements` で `tsType` とリテラルの union の `options` を出す。vize の `analyzeSfc` は `defineModel` と import した型を返さず、不採用 |
+| V18 props の宣言から値の組を作る | **成立** | union の要素ごと、boolean の反対の値で組を作り `inputs.presets` に出す。`--preset` で fixture に重ねて描く |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -626,6 +627,40 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V18: props の宣言から値の組を作る
+
+検証日: 2026-11-19（[#9](https://github.com/kan/vue-preview/issues/9)）
+
+**結果: 成立**（V17 の `options` と runtime の型から自前で作る。vize の `generateVariants` は使わない）
+
+### きっかけ
+- fixture が無いと、props はプレースホルダか既定値で描かれます。プレースホルダとの `===` は常に false なので、`v-if="status === 'suspended'"` の先は fixture を書かないと見られませんでした。
+- vize の Musea には、props の定義から値の組を作る `generateVariants` があります。作れるのは boolean、リテラルの union、既定値だけでした（issue の確認結果）。
+
+### 方式
+- vize は V17 で取り込まないと決めたので、同じ規則を `presets.ts` に書きました。材料は `inputs.props` の `options`（V17）、`types`、`default` です。
+  - `options` のある props は、要素ごとに 1 つの組を作ります。既定値と同じ要素も含めます。pike が、すべての選択肢をボタンとして並べられるようにするためです。
+  - 型が `Boolean` だけの props は、既定値の反対の値の組を 1 つ作ります。既定値が無ければ `true` です（Vue は無い boolean を false にする）。
+  - ほかの props には作りません。Musea はこれらを `null` にしますが、プレースホルダのほうが、テンプレートが読む式を描いた結果から読み取れます。
+  - 1 つの組は 1 つの props だけを変えます。組み合わせは数が増えるので作りません。「Default」の組も作りません。何も変えずに描いた結果と同じになるためです。
+- 名前は `prop=値` です。Musea の PascalCase（`Suspended`）では、どの props を変えた組かが名前から分からず、異なる props の名前がぶつかることもあるためです。
+- `--preset <name>` で選ぶと、その値を描く対象のコンポーネントの fixture に重ねます。組は描く対象をコンパイルしないと作れないので、CLI が先に `graph.compile()` で対象をコンパイルし、`inputs.presets` から選んで fixture に重ねてから描きます。`--variant` と一緒に使うと、variant の対象のコンポーネントに重なります。variant が渡した props は、今までどおり fixture より優先されます。
+- ctx Proxy は fixture をローカルの名前から先に引くので、分割代入の別名（`const { status: s } = defineProps()`）で fixture に値があると、そちらが勝ってしまいます。preset を重ねるときは、その props を指す別名のキーを fixture から消します。
+- 次の 2 つは対応していません。
+  - `1 | '1'` のように、文字列にすると同じになる要素を持つ union では、名前がぶつかります。`--preset` は先にある方を選びます。
+  - 既定値が静的に読めない boolean（`{ open: SOME_CONST }`）は、既定値が無いものとして扱い、`=true` の組を作ります。
+- art ファイルがあっても `presets` を出します。art の variant は作者が書いた見本で、presets は props を 1 つずつ試すためのもので、役割が違うためです。
+
+### 根拠
+- e2e で StatusBadge を描いて確かめました。
+  - `inputs.presets` は `status=active` / `status=invited` / `status=suspended` / `compact=true` の 4 つ。UserTable は `loading=true` だけ、EditDialog は `visible=true`（`defineModel`）だけで、配列とオブジェクトの props には作られない。
+  - `--preset status=suspended` で `badge--suspended` と「停止」を描く。`--preset compact=true` では `v-if="!compact"` のラベルが消え、`status` は既定値のまま。
+  - `--variant Suspended --preset compact=true` では、variant が渡した `status` と preset の `compact` が両方とも描いた結果に出る。
+  - 無い名前を渡すと、warning に値の組の一覧を出し、preset なしで描く。
+- `edge/AliasedProp.vue`（`const { status: s } = defineProps()` と、`s` を書いた fixture）では、`--preset status=closed` が fixture の値より優先されることを確かめました。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -634,7 +669,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `onMounted` などのライフサイクルで取得するデータは、fixture で与えるのが前提です。
 - **プレースホルダの限界**:
   - プレースホルダをキーにしたオブジェクト参照（`labels[status]`）は `undefined` になります。
-  - `===` による比較は常に false になるので、`v-if="mode === 'edit'"` は v-else 側に倒れます。
+  - `===` による比較は常に false になるので、`v-if="mode === 'edit'"` は v-else 側に倒れます。props がリテラルの union なら、`--preset`（V18）で値を与えて分岐の先を描けます。
 - `<style lang="scss">` などのプリプロセッサは未対応です（warning でスキップ）。`transformAssetUrls` を無効にしているので、画像も表示されません。
 - `main.ts` の `app.use()` / `app.provide()` は再現しません。PrimeVue 以外のプラグイン（router、pinia）を使うテンプレートは、`$route` などがプレースホルダか描画エラーになります。i18n はメッセージだけを読む簡易対応（V13）です。設定でプラグインの「プレビュー用初期化モジュール」を指定できるようにする案が考えられます。
 - Portal へのパッチは PrimeVue の内部実装（`data.mounted` / `computed.inline`）に依存します。PrimeVue の更新で壊れる可能性があるので、バージョンを固定するか、壊れたことを検知する仕組みが必要です。
@@ -656,6 +691,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `detect-config.ts`（`htmlStylesheets`）/ `config.ts`（`resolveUrl`）: V14
   - `art.ts` / `resolve-components.ts`（`ResolveOptions.previewed` / `sources`）: V16
   - `prop-types.ts`: V17
+  - `presets.ts` / `resolve-components.ts`（`compile`）/ `cli.ts`（`--preset`）: V18
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3
@@ -665,6 +701,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `edge/`: プレースホルダ、循環参照、未解決コンポーネント、グローバル登録、i18n の検証用
   - `UserTable.art.vue` / `StatusBadge.art.vue`: V16 の art ファイル
   - `edge/TypedProps.vue` / `edge/TypedPropsPlain.vue` / `edge/typed-props.ts`: V17 の型で宣言した props
+  - `edge/AliasedProp.vue`: V18 の別名の props と preset
 - `fixture-app/src/locales/`: V13 のメッセージファイル（名前付き export の `ja.ts` と default export の `en.ts`）
 - `fixture-app/index.html` / `public/static/`: V14 の link と、その CSS
 - `fixture-app/src/compare.ts` / `compare.html`: V6 の比較用エントリ

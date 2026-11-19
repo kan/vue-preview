@@ -29,6 +29,13 @@ docker compose exec -T app "$BIN" render src/components/UserTable.vue --root /ap
 docker compose exec -T app "$BIN" render src/components/UserTable.vue --root /app --variant Nope --json --out /out/art-UserTable-nope.json
 docker compose exec -T app "$BIN" render src/components/StatusBadge.vue --root /app --variant Suspended --json --out /out/art-StatusBadge.json
 echo "rendered src/components/UserTable.vue, StatusBadge.vue (--variant)"
+# sets of prop values made from the declarations (REPORT V18), also with a variant
+for p in status=suspended compact=true nope; do
+  docker compose exec -T app "$BIN" render src/components/StatusBadge.vue --root /app --preset "$p" --json --out "/out/preset-StatusBadge-$p.json"
+done
+docker compose exec -T app "$BIN" render src/components/StatusBadge.vue --root /app --variant Suspended --preset compact=true --json --out /out/preset-StatusBadge-variant.json
+docker compose exec -T app "$BIN" render src/components/edge/AliasedProp.vue --root /app --preset status=closed --json --out /out/preset-AliasedProp.json
+echo "rendered src/components/StatusBadge.vue, edge/AliasedProp.vue (--preset)"
 # messages of another locale (REPORT V13)
 docker compose exec -T app "$BIN" render src/components/edge/I18nDemo.vue --root /app --locale en --json --out /out/I18nDemo-en.json
 echo "rendered src/components/edge/I18nDemo.vue (--locale en)"

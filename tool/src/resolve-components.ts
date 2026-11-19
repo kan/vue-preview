@@ -7,6 +7,10 @@ import type { ProjectModules } from './load-project-modules';
 import { compileSfc, type CompiledSfc, UNKNOWN } from './compile';
 import { createCtxProxy } from './ctx-proxy';
 import { createPlaceholder, type PlaceholderOptions } from './placeholder';
+import { presetsFor } from './presets';
+
+/** A static value for `inputs` (`default`), or nothing */
+const withDefault = (value: unknown) => (value === UNKNOWN || value === undefined ? {} : { default: value });
 
 export interface ResolveOptions {
   aliases: Record<string, string>; // '@' -> absolute dir
@@ -85,11 +89,11 @@ export class ComponentGraph {
    */
   inputs(entry: string) {
     const sfc = this.compiled.get(entry);
-    const withDefault = (value: unknown) => (value === UNKNOWN || value === undefined ? {} : { default: value });
     const settable = (name: string) => sfc?.bindings[name] !== 'setup-const' || name in (sfc?.literals ?? {});
+    const props = this.inputProps(entry);
     return {
-      // tsType / options are undefined (left out of the JSON) for props not declared by type
-      props: Object.entries(sfc?.props ?? {}).map(([name, p]) => ({ name, types: p.types, tsType: p.tsType, options: p.options, ...withDefault(p.default) })),
+      props,
+      presets: presetsFor(props),
       // `origin: 'call'`: received from a composable (`const { t } = useI18n()`); callers may tuck these away
       values: [...this.rootInputs].filter(settable).map((name) => ({
         name,
@@ -97,6 +101,36 @@ export class ComponentGraph {
         ...(sfc?.fromCalls.has(name) ? { origin: 'call' } : {}),
       })),
     };
+  }
+
+  /** The props of a compiled component as `inputs` shows them. */
+  private inputProps(file: string) {
+    // tsType / options are undefined (left out of the JSON) for props not declared by type
+    return Object.entries(this.compiled.get(file)?.props ?? {}).map(([name, p]) => ({
+      name,
+      types: p.types,
+      tsType: p.tsType,
+      options: p.options,
+      ...withDefault(p.default),
+    }));
+  }
+
+  /**
+   * Compile an SFC once (cached). The CLI compiles the previewed component before `build` to read
+   * its `inputs` (the `--preset` sets) and complete its fixture.
+   */
+  compile(file: string): CompiledSfc {
+    let sfc = this.compiled.get(file);
+    if (sfc) return sfc;
+    const t = performance.now();
+    sfc = compileSfc(this.mods, file, this.opts.sources?.[file], { tsTypes: this.opts.previewed.file === file });
+    this.time.sfcCompile += performance.now() - t;
+    this.compiled.set(file, sfc);
+    this.deps.add(this.mods.rel(file));
+    // an imported props type changes the output too; a library's types are not the project's files
+    for (const d of sfc.typeDeps) if (!d.split(/[\\/]/).includes('node_modules')) this.deps.add(this.mods.rel(d));
+    sfc.warnings.forEach((w) => this.warn(w));
+    return sfc;
   }
 
   /** Build a component definition (the root, then its children recursively). */
@@ -108,17 +142,7 @@ export class ComponentGraph {
     if (stack.includes(file)) return this.stub(path.basename(file, '.vue'), `circular import (${[...stack, file].map((f) => this.mods.rel(f)).join(' -> ')})`);
     if (stack.length >= this.opts.maxDepth) return this.stub(path.basename(file, '.vue'), `max depth ${this.opts.maxDepth} exceeded at ${rel}`);
 
-    let sfc = this.compiled.get(file);
-    if (!sfc) {
-      const t = performance.now();
-      sfc = compileSfc(this.mods, file, this.opts.sources?.[file], { tsTypes: previewed });
-      this.time.sfcCompile += performance.now() - t;
-      this.compiled.set(file, sfc);
-      this.deps.add(rel);
-      // an imported props type changes the output too; a library's types are not the project's files
-      for (const d of sfc.typeDeps) if (!d.split(/[\\/]/).includes('node_modules')) this.deps.add(this.mods.rel(d));
-      sfc.warnings.forEach((w) => this.warn(w));
-    }
+    const sfc = this.compile(file);
     const nextStack = [...stack, file];
 
     // 2. imports

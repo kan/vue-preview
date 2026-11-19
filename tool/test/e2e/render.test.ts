@@ -197,6 +197,47 @@ describe('variants of a Musea art file (REPORT V16)', () => {
   });
 });
 
+describe('presets: sets of prop values made from the declarations (REPORT V18)', () => {
+  type WithPresets = Result & { inputs: any };
+  const suspended = load('preset-StatusBadge-status=suspended') as WithPresets;
+  const compact = load('preset-StatusBadge-compact=true') as WithPresets;
+  const nope = load('preset-StatusBadge-nope') as WithPresets;
+  const withVariant = load('preset-StatusBadge-variant') as WithPresets;
+  test('one set per union element and for the other value of a boolean', () => {
+    expect(suspended.inputs.presets).toEqual([
+      { name: 'status=active', props: { status: 'active' } },
+      { name: 'status=invited', props: { status: 'invited' } },
+      { name: 'status=suspended', props: { status: 'suspended' } },
+      { name: 'compact=true', props: { compact: true } },
+    ]);
+  });
+  test('no set for props without such values (arrays, objects)', () => {
+    expect((load('UserTable') as WithPresets).inputs.presets).toEqual([{ name: 'loading=true', props: { loading: true } }]);
+    expect((load('EditDialog') as WithPresets).inputs.presets).toEqual([{ name: 'visible=true', props: { visible: true } }]);
+  });
+  test('--preset renders the component with that value (a branch a placeholder cannot reach)', () => {
+    expect(suspended.warnings).toEqual([]);
+    expect(suspended.html).toContain('badge--suspended');
+    expect(suspended.html).toContain('停止');
+    expect(compact.html).toContain('badge--active'); // the default stays
+    expect(compact.html).not.toContain('有効'); // v-if="!compact"
+  });
+  test('with --variant: the variant passes status, the preset sets compact', () => {
+    expect(withVariant.warnings).toEqual([]);
+    expect(withVariant.html).toContain('badge--suspended');
+    expect(withVariant.html).not.toContain('停止');
+  });
+  test('a preset wins over the fixture value under a destructured name (`{ status: s }`)', () => {
+    const r = load('preset-AliasedProp') as WithPresets;
+    expect(r.warnings).toEqual([]);
+    expect(r.html).toContain('<p class="aliased">closed</p>');
+  });
+  test('an unknown preset: a warning naming the presets, and the component as without --preset', () => {
+    expect(nope.warnings).toEqual(['--preset nope: not a preset of src/components/StatusBadge.vue (status=active, status=invited, status=suspended, compact=true)']);
+    expect(nope.html).toContain('有効');
+  });
+});
+
 describe('globally registered components (app.component in src/main.ts)', () => {
   for (const name of ['GlobalRegistered', 'noconfig-GlobalRegistered']) {
     const r = load(name);

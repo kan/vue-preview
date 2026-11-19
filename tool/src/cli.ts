@@ -17,7 +17,7 @@ import { createI18n, type I18n, loadMessages, messageFile } from './i18n';
 declare const VUE_PREVIEW_VERSION: string;
 const VERSION = typeof VUE_PREVIEW_VERSION === 'string' ? VUE_PREVIEW_VERSION : 'dev';
 
-const USAGE = 'usage: vue-preview --version | vue-preview render <path> --root <dir> [--fixture <file>] [--variant <name>] [--json] [--out <file>] [--portal teleport|inline|off] [--locale <locale>]';
+const USAGE = 'usage: vue-preview --version | vue-preview render <path> --root <dir> [--fixture <file>] [--variant <name>] [--preset <prop=value>] [--json] [--out <file>] [--portal teleport|inline|off] [--locale <locale>]';
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -27,6 +27,7 @@ async function main() {
       root: { type: 'string' },
       fixture: { type: 'string' },
       variant: { type: 'string' },
+      preset: { type: 'string' },
       json: { type: 'boolean', default: false },
       out: { type: 'string' },
       portal: { type: 'string' },
@@ -131,6 +132,7 @@ async function main() {
   if (art.file) addDep(art.file);
   art.warnings.forEach(warn);
   const { variantSfc } = art;
+  const previewed = { file: entry, fixture };
   const graph = new ComponentGraph(mods, {
     aliases,
     componentDirs: (config.componentDirs ?? []).map((d) => path.resolve(root, d)),
@@ -138,9 +140,24 @@ async function main() {
     maxDepth: config.maxDepth ?? 20,
     placeholder: { iterations: config.placeholderIterations ?? 3 },
     i18n,
-    previewed: { file: entry, fixture },
+    previewed,
     sources: variantSfc ? { [variantSfc.file]: variantSfc.source } : {},
   });
+  // `--preset` (REPORT V18): a set made from the component's props, laid over the fixture before
+  // `build` reads it
+  if (values.preset !== undefined) {
+    const sfc = graph.compile(entry);
+    const { presets } = graph.inputs(entry);
+    const found = presets.find((p) => p.name === values.preset);
+    if (found) {
+      const next: Record<string, unknown> = { ...(fixture ?? {}), ...found.props };
+      // the ctx proxy reads a fixture by local name first (`const { status: s } = defineProps()`)
+      for (const [local, prop] of Object.entries(sfc.propAliases)) if (prop in found.props) delete next[local];
+      previewed.fixture = next;
+    } else {
+      warn(`--preset ${values.preset}: not a preset of ${relPosix(root, entry)} (${presets.map((p) => p.name).join(', ') || 'none'})`);
+    }
+  }
   const rootDef = await graph.build(variantSfc?.file ?? entry);
   lap('compile', t);
   timings['compile.sfc'] = Math.round(graph.time.sfcCompile * 10) / 10;
