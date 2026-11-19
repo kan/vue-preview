@@ -28,7 +28,7 @@ Vue SFC を受け取り、簡易レンダリングした「CSS インライン�
 ## CLI
 
 ```
-vue-preview render <path> [--root <dir>] [--fixture <file>] [--json] [--out <file>]
+vue-preview render <path> [--root <dir>] [--fixture <file>] [--variant <name>] [--json] [--out <file>]
                           [--portal teleport|inline|off] [--locale <locale>] [--timings]
 vue-preview --version
 ```
@@ -52,6 +52,7 @@ vue-preview --version
       "values": [{ "name": "mode" }, { "name": "open", "default": false }, { "name": "t", "origin": "call" }],
       "fixture": "src/components/UserTable.preview.json"
     },
+    "variants": [{ "name": "With rows", "default": true }, { "name": "Empty", "default": false }],
     "timings": { "loadModules": 0, "compile": 0, "ssr": 0, "css": 0, "total": 0 },
     "tailwind": { "candidates": 0, "extractor": "oxide" },
     "resolved": { "vue": "/app/node_modules/vue/index.mjs" }
@@ -64,10 +65,12 @@ vue-preview --version
     - `props`: 宣言された props。型と、静的に読めた既定値（`default`）。
     - `values`: props 以外にテンプレートが参照した識別子（import を除く）。描画中に記録するので、実際に使われた順に並ぶ。静的に読めた初期値（`ref(false)` など）があれば `default`。`<script setup>` で定義した関数（`setup-const` で静的な値でないもの）は JSON で与えられないので除く。関数呼び出しの戻り値から受け取った名前（`const { t } = useI18n()`、`const store = useStore()`。`ref` / `computed` などのリアクティビティの呼び出しは除く）には `origin: "call"` を付ける。composable の関数やストアが多く、呼び出し側は畳んで見せてよい。
     - `fixture`: 使った fixture（ルート相対。ルートの外なら `../` で始まる）。無ければ null。
-  - `html` / `deps` / `warnings` / `modules` / `inputs` が契約です（pike が読む）。`config` / `timings` / `tailwind` / `resolved` は確認と計測のための欄で、形を変えることがあります。
+  - `variants`: 描く SFC の隣にある Musea の art ファイル（`<Name>.art.vue`）の variant の一覧（後述。REPORT V16）。`default` は Musea が最初に見せる variant。art ファイルが無ければ欄ごと出さない。`--variant` の有無によらず出す。
+  - `html` / `deps` / `warnings` / `modules` / `inputs` / `variants` が契約です（pike が読む）。`config` / `timings` / `tailwind` / `resolved` は確認と計測のための欄で、形を変えることがあります。
 - 依存キャッシュを初めて作るときは、その旨を stderr に 1 行出す（stdout は出力専用）。
 - 依存を用意できないとき（ロックファイルが無い、workspaces、install の失敗）は、理由を stderr に出して終了コード 1 で終わる。
 - `--portal`: PrimeVue の Portal の扱い（後述）。既定は `teleport`。
+- `--variant`: art ファイルの variant を名前で選んで描く（後述）。省略すると、art ファイルがあっても今までどおりコンポーネントだけを描く。art ファイルが無いときと、その名前の variant が無いときは、warning を出してコンポーネントだけを描く。
 - `--locale`: i18n のロケール（後述）。設定の `i18n.locale` より優先する。
 - `--timings`: 計測値を stderr に出す。
 
@@ -124,7 +127,8 @@ cli.ts
  ├─ deps-cache.ts            ルートで vue を解決できなければ依存キャッシュを用意し、NODE_PATH 付きで自分を起動し直す
  ├─ detect-config.ts         設定ファイルに無いキーを vite.config（alias）と src/main.ts から推測する
  ├─ load-project-modules.ts  ルート（または依存キャッシュ）の node_modules から vue / compiler-sfc / server-renderer を解決・import
- ├─ resolve-components.ts    ルート SFC から import を再帰的にたどってコンポーネント定義を組み立てる
+ ├─ art.ts                   隣の art ファイルから variant を読む。--variant なら variant の SFC を組み立てる
+ ├─ resolve-components.ts    ルート SFC（または variant）から import を再帰的にたどってコンポーネント定義を組み立てる
  │   ├─ compile.ts           parse → compileScript（静的解析のみ）→ compileTemplate（function モード）→ compileStyle
  │   └─ ctx-proxy.ts         setup() が返す Proxy。テンプレートの識別子の値を決める
  │       └─ placeholder.ts   未知の値の代役
@@ -159,7 +163,7 @@ cli.ts
 
 1. 親から実際に渡された props（`vnode.props` にキーがある場合のみ）
 2. 解決済みの import（子コンポーネント、ライブラリの値）
-3. fixture の値（ルートコンポーネントのみ）
+3. fixture の値（ルートコンポーネントのみ。`--variant` のときは variant の対象のコンポーネント）
 4. `defineProps` / `defineModel` のデフォルト値（リテラルのみ）。Boolean 型でデフォルトがない場合は `false`
 5. 静的に評価できるリテラルの初期値（`ref(false)`、`const labels = { ... }`）
 6. プレースホルダ
@@ -190,6 +194,32 @@ cli.ts
   4. どれにもなければスタブ
 - 循環参照と深さの上限超過はスタブにして、warning に記録する。
 - スタブは `data-vp-stub="<Name>"` を持つ破線の箱として描画し、既定 slot の中身も表示する。
+
+### Musea の art ファイル（`art.ts`、REPORT V16）
+
+[Musea](https://github.com/ubugeeei-prod/vize)（vize のコンポーネントのカタログ）の `*.art.vue` は、1 つのコンポーネントの見本（variant）を並べたファイルです。
+
+```vue
+<script setup lang="ts">
+defineArt('./UserTable.vue', { title: 'UserTable' });
+</script>
+<art>
+  <variant name="With rows" default><UserTable /></variant>
+  <variant name="Empty"><UserTable :rows="[]" /></variant>
+</art>
+```
+
+- 描く SFC の隣の `<Name>.art.vue` を読みます。読んだ art ファイルは `deps` に入ります。
+- `<art>` は compiler-sfc の `parse` で custom block として取り出し、その中身を `<template>` で包んでもう一度 `parse` して、`<variant>` の `name`、`default`、中身を得ます。vize は使いません。`default` の付いた variant が無ければ、最初の variant を `default` にします（Musea と同じ）。
+- `--variant` で選んだ variant は、art ファイルの `<art>` を `<template>`（variant の中身）に置き換えた SFC として、メモリ上で組み立てます。art ファイルの `<script setup>` と `<style>` はそのまま残ります。
+  - 対象のコンポーネントは `defineArt()` の第 1 引数（古い形式では `<art component="...">`）です。パスで書かれていれば、Musea と同じくファイル名の PascalCase の名前で import を `<script setup>` に足します。識別子で書かれていれば（`defineArt(UserTable)`）、art ファイル自身の import を使います。
+    - `./`、`/`、alias のどれでも始まらないパス（`defineArt('UserTable.vue')`）は、Musea と同じく art ファイルからの相対パスとして読みます。
+    - art ファイルがその名前をすでに import していれば（`import { default as UserTable } from ...` の形も含む）、import は足しません。ファイル名が識別子にならないとき（`2Col.vue`）は、import を足さずに warning を出します。
+    - `<script setup>` が無ければ足します。`<script lang="ts">` があれば、足す `<script setup>` にも同じ `lang` を付けます（compiler-sfc は 2 つの script の言語が違うとエラーにする）。
+  - art ファイルの script も実行しません。組み立てた SFC は、ほかの SFC と同じく静的に解析してコンパイルします。variant が参照する art 側の値は、静的に読めればその値、読めなければプレースホルダです。
+- 組み立てた SFC がルートになり、対象のコンポーネントはその子として描かれます。fixture は今までどおり対象のコンポーネントに当て、`inputs` も対象のコンポーネントのものを出します。値の解決順は変わらないので、variant が渡した props は fixture より優先されます（「値の解決順」の 1）。
+- `defineArt()` が描く SFC とは別のファイルを指しているときは warning を出します。fixture は描く SFC にしか当たりません。
+- 次はまだ扱いません: `<variant>` の `args`（Musea の操作パネルの初期値）と `viewport`、`.vue` の中に書く `<art>`（Musea の `inlineArt` と `<Self>`）、全 variant を並べた 1 枚の出力。
 
 ### PrimeVue の Portal
 

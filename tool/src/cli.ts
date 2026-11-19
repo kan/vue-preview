@@ -7,6 +7,7 @@ import { DEPS_DIR_ENV, ensureDepsCache, projectHasVue } from './deps-cache';
 import { loadProjectModules, relPosix } from './load-project-modules';
 import { decoratePlaceholders, PLACEHOLDER_CSS, plainPlaceholders } from './placeholder';
 import { ComponentGraph } from './resolve-components';
+import { resolveArt } from './art';
 import { buildTailwind, inlineUrls, resolveCssEntry } from './css';
 import { buildHtml } from './html';
 import { loadConfig, readJson } from './config';
@@ -16,7 +17,7 @@ import { createI18n, type I18n, loadMessages, messageFile } from './i18n';
 declare const VUE_PREVIEW_VERSION: string;
 const VERSION = typeof VUE_PREVIEW_VERSION === 'string' ? VUE_PREVIEW_VERSION : 'dev';
 
-const USAGE = 'usage: vue-preview --version | vue-preview render <path> --root <dir> [--fixture <file>] [--json] [--out <file>] [--portal teleport|inline|off] [--locale <locale>]';
+const USAGE = 'usage: vue-preview --version | vue-preview render <path> --root <dir> [--fixture <file>] [--variant <name>] [--json] [--out <file>] [--portal teleport|inline|off] [--locale <locale>]';
 
 async function main() {
   const { values, positionals } = parseArgs({
@@ -25,6 +26,7 @@ async function main() {
     options: {
       root: { type: 'string' },
       fixture: { type: 'string' },
+      variant: { type: 'string' },
       json: { type: 'boolean', default: false },
       out: { type: 'string' },
       portal: { type: 'string' },
@@ -123,6 +125,12 @@ async function main() {
       warn(`i18n messages for '${locale}' not loaded (${relPosix(root, file)}): ${(e as Error).message.split('\n')[0]}`);
     }
   }
+  // a Musea art file next to the SFC (REPORT V16): its variants are listed, and `--variant`
+  // renders one of them, with the component (and its fixture) inside
+  const art = resolveArt(mods, entry, values.variant, aliases);
+  if (art.file) addDep(art.file);
+  art.warnings.forEach(warn);
+  const { variantSfc } = art;
   const graph = new ComponentGraph(mods, {
     aliases,
     componentDirs: (config.componentDirs ?? []).map((d) => path.resolve(root, d)),
@@ -130,8 +138,10 @@ async function main() {
     maxDepth: config.maxDepth ?? 20,
     placeholder: { iterations: config.placeholderIterations ?? 3 },
     i18n,
+    previewed: { file: entry, fixture },
+    sources: variantSfc ? { [variantSfc.file]: variantSfc.source } : {},
   });
-  const rootDef = await graph.build(entry, [], { fixture });
+  const rootDef = await graph.build(variantSfc?.file ?? entry);
   lap('compile', t);
   timings['compile.sfc'] = Math.round(graph.time.sfcCompile * 10) / 10;
   timings['compile.packageImport'] = Math.round(graph.time.packageImport * 10) / 10;
@@ -217,6 +227,7 @@ async function main() {
           modules: mods.source,
           config: { file: configFile ? relPosix(root, configFile) : null, detected },
           inputs: { ...graph.inputs(entry), fixture: fixtureRel },
+          ...(art.variants ? { variants: art.variants } : {}),
           timings,
           tailwind: tailwindInfo,
           resolved: mods.resolved,

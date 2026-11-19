@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- SFC の隣にある [Musea](https://github.com/ubugeeei-prod/vize) の art ファイル（`<Name>.art.vue`）を読むようにした。`--variant <name>` でその variant を描き、`--json` の `variants` に variant の一覧を出す。art ファイルの script は実行しない。fixture は variant で描くときもコンポーネントに当たり、variant が渡した props が優先される。
+
 ## [0.6.1] - 2026-11-10
 
 ### Infrastructure

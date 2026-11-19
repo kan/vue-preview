@@ -32,6 +32,7 @@ V1〜V6 の検証日: 2026-09-25（V7 以降は各節に書きます）
 | V13 i18n の簡易対応 | **成立** | `src/i18n/ja.ts` などのメッセージファイルを読み、`$t('key')` と `useI18n()` の `t` を訳す |
 | V14 index.html で読み込むグローバル CSS | **成立** | `index.html` の `<link rel="stylesheet">` を、エントリの CSS より前に `globalCss` へ入れる。`/…` は `public/` の下 |
 | V15 SFC のコンパイルを vize に替える | **不採用** | template のコンパイルは 23ms 縮むが、vize の読み込みが 14ms かかり、wall では差が出ない。バイナリは約 77MB 増える |
+| V16 Musea の art ファイルの variant | **成立** | `<art>` を `<template>` に置き換えた SFC をメモリ上で作って描く。fixture は対象のコンポーネントに当て、variant が渡した props を優先する |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -544,6 +545,34 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V16: Musea の art ファイルの variant
+
+検証日: 2026-11-19（[#8](https://github.com/kan/vue-preview/issues/8)）
+
+**結果: 成立**（`<art>` を `<template>` に置き換えた SFC をメモリ上で作り、ほかの SFC と同じく静的に解析して描く。vize は使わない）
+
+### きっかけ
+- fixture は 1 つのコンポーネントに 1 つで、描ける状態も 1 つです。「行がある」「空」のように状態を切り替えて見るには、fixture を書き換えるしかありませんでした。
+- vize の Musea は、`*.art.vue` に `<variant>` を並べて、1 つのコンポーネントの見本を書く形式です。Musea 自身は Vite の dev サーバの上で、variant をブラウザで mount して描きます。
+
+### 方式
+- Musea（`@vizejs/vite-plugin-musea`）の実装を読むと、variant ごとに合成の SFC を作っていました。art ファイルの `<script setup>` を script にし、variant の中身を `<template>` にし、`defineArt("./X.vue")` が指すコンポーネントの import を足します。import の名前は、ファイル名の PascalCase です。vue-preview も同じ形の SFC を作ります。
+- `<art>` は compiler-sfc の `parse` が custom block として返します。その中身を `<template>` で包んでもう一度 `parse` すると、`<variant>` の要素と位置が得られます。compiler-dom を別に読み込む必要はありませんでした。
+- `<variant>` の `args` は、Musea の操作パネル（props を手で変える欄）の初期値でした。variant の template からは参照されないので、今回は読みません。
+- 描くのは `--variant` で選んだ 1 つです。省略すると、art ファイルがあっても今までどおりコンポーネントだけを描きます。art ファイルを置いただけで、pike の表示が変わらないようにするためです。
+- fixture は、ルート（合成の SFC）ではなく対象のコンポーネントに当てます。値の解決順（親から渡された props が先）は変えないので、variant が渡した props が fixture より優先されます。`inputs` も対象のコンポーネントのものなので、pike のフォームは variant で描くときもそのまま使えます。
+
+### 根拠
+- fixture-app に `UserTable.art.vue` を置き、e2e で確かめました。
+  - `With rows`（`<UserTable />`）は fixture の 4 行を描く。
+  - `Empty`（`<UserTable :rows="[]" />`）は fixture の行を描かず「ユーザーがいません」を描く。art の `const caption = '...'` と、art の scoped style も入る。
+  - art ファイルの `<script setup>` には、実行されると例外を投げる文を置いた。warning は出なかった。
+  - `--json` の `variants` は `--variant` の有無によらず出る。art ファイルの無いコンポーネントでは出ない。
+  - 無い名前を `--variant` に渡すと、warning を出してコンポーネントだけを描く。HTML は `--variant` なしと同じ。
+- `StatusBadge.art.vue` では、`defineArt('StatusBadge.vue')`（`./` の無いパス）と、art ファイル自身の `import { default as StatusBadge }` を確かめました。warning は出ず、import も二重になりませんでした。
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -572,6 +601,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `ctx-proxy.ts`（`CtxSources.inputs`）/ `resolve-components.ts`（`rootInputs` / `inputs`）: V12
   - `i18n.ts` / `compile.ts`（`i18nNames`）: V13
   - `detect-config.ts`（`htmlStylesheets`）/ `config.ts`（`resolveUrl`）: V14
+  - `art.ts` / `resolve-components.ts`（`ResolveOptions.previewed` / `sources`）: V16
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3
@@ -579,6 +609,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `html.ts`
 - `fixture-app/src/components/`: 検証対象の画面
   - `edge/`: プレースホルダ、循環参照、未解決コンポーネント、グローバル登録、i18n の検証用
+  - `UserTable.art.vue` / `StatusBadge.art.vue`: V16 の art ファイル
 - `fixture-app/src/locales/`: V13 のメッセージファイル（名前付き export の `ja.ts` と default export の `en.ts`）
 - `fixture-app/index.html` / `public/static/`: V14 の link と、その CSS
 - `fixture-app/src/compare.ts` / `compare.html`: V6 の比較用エントリ

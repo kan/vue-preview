@@ -55,7 +55,8 @@ vue-preview render src/components/UserPage.vue --root /app --json --out UserPage
 | `<path>` | 描画する SFC（`--root` からの相対パス） |
 | `--root <dir>` | プロジェクトルート（`package.json` と `vue-preview.config.json` がある場所）。省略時はカレントディレクトリ |
 | `--fixture <file>` | fixture の JSON。省略時は `<name>.preview.json` を探し、なければプレースホルダだけで描画する |
-| `--json` | `{ html, deps, warnings, modules, inputs, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧 |
+| `--variant <name>` | 隣の `<name>.art.vue`（Musea の art ファイル）の variant を名前で選んで描く。省略時はコンポーネントだけを描く |
+| `--json` | `{ html, deps, warnings, modules, inputs, variants, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧、`variants` は art ファイルの variant の一覧（art ファイルがあるときだけ） |
 | `--out <file>` | stdout の代わりにファイルへ書き出す |
 | `--portal teleport\|inline\|off` | PrimeVue の Dialog などの描画方法（既定 `teleport`） |
 | `--locale <locale>` | i18n のメッセージに使うロケール（既定 `ja`） |
@@ -78,6 +79,29 @@ fixture にない値は、次の順で補われます。
 1. `defineProps` のデフォルト値
 2. `ref(false)` のように静的に読み取れる初期値
 3. プレースホルダ
+
+### art ファイルの variant
+
+[Musea](https://github.com/ubugeeei-prod/vize) の art ファイル（`*.art.vue`）を SFC の隣に置くと、その variant を `--variant` で選んで描けます。
+
+```vue
+<!-- src/components/UserTable.art.vue -->
+<script setup lang="ts">
+defineArt('./UserTable.vue', { title: 'UserTable' });
+</script>
+<art>
+  <variant name="With rows" default><UserTable /></variant>
+  <variant name="Empty"><UserTable :rows="[]" /></variant>
+</art>
+```
+
+```sh
+vue-preview render src/components/UserTable.vue --root /app --variant Empty
+```
+
+- art ファイルの script も実行しません。
+- fixture は variant で描くときもコンポーネントに当たります。variant が渡した props（上の `:rows="[]"`）は fixture より優先されます。
+- `args`、`viewport`、`.vue` の中に書く `<art>` はまだ読みません。
 
 ### 設定ファイル `vue-preview.config.json`
 

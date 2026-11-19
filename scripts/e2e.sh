@@ -21,6 +21,12 @@ do
   docker compose exec -T app "$BIN" render "$c" --root /app --out "/out/$name.html"
   echo "rendered $c"
 done
+# variants of a Musea art file (REPORT V16); an unknown name falls back to the component
+docker compose exec -T app "$BIN" render src/components/UserTable.vue --root /app --variant "With rows" --json --out /out/art-UserTable-with-rows.json
+docker compose exec -T app "$BIN" render src/components/UserTable.vue --root /app --variant Empty --json --out /out/art-UserTable-empty.json
+docker compose exec -T app "$BIN" render src/components/UserTable.vue --root /app --variant Nope --json --out /out/art-UserTable-nope.json
+docker compose exec -T app "$BIN" render src/components/StatusBadge.vue --root /app --variant Suspended --json --out /out/art-StatusBadge.json
+echo "rendered src/components/UserTable.vue, StatusBadge.vue (--variant)"
 # messages of another locale (REPORT V13)
 docker compose exec -T app "$BIN" render src/components/edge/I18nDemo.vue --root /app --locale en --json --out /out/I18nDemo-en.json
 echo "rendered src/components/edge/I18nDemo.vue (--locale en)"
