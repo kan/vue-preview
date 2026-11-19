@@ -31,6 +31,7 @@ V1〜V6 の検証日: 2026-09-25（V7 以降は各節に書きます）
 | V12 fixture で与えられる値の一覧 | **成立** | `--json` の `inputs` に、ルートの props と、描画中にテンプレートが参照した値を出す |
 | V13 i18n の簡易対応 | **成立** | `src/i18n/ja.ts` などのメッセージファイルを読み、`$t('key')` と `useI18n()` の `t` を訳す |
 | V14 index.html で読み込むグローバル CSS | **成立** | `index.html` の `<link rel="stylesheet">` を、エントリの CSS より前に `globalCss` へ入れる。`/…` は `public/` の下 |
+| V15 SFC のコンパイルを vize に替える | **不採用** | template のコンパイルは 23ms 縮むが、vize の読み込みが 14ms かかり、wall では差が出ない。バイナリは約 77MB 増える |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -500,6 +501,46 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 ### 根拠
 - e2e では、fixture-app の `index.html` に `public/static/linked.css` への link を置き、設定ファイルなしの描画でその CSS が入り、`deps` に `index.html` と CSS が入ることを確かめました。
 - 業務アプリでは、`deps` に `index.html` と `public/static/css/common.css` が入り、warning は出ませんでした。
+
+---
+
+## V15: SFC のコンパイルを vize に替えると速くなるか
+
+検証日: 2026-11-19（[#10](https://github.com/kan/vue-preview/issues/10)）
+
+**結果: 不採用**（template のコンパイルは 23ms 縮むが、vize の読み込みに 14ms かかり、wall では差が出ない。バイナリは約 77MB 増える）
+
+### きっかけ
+- V6 の計測では、描画の時間のうち SFC のコンパイルが約 110ms でした。
+- [vize](https://github.com/ubugeeei-prod/vize) は Rust 製の Vue のコンパイラで、npm に NAPI 版（`@vizejs/native`）があります。fixture-app の 6 つの SFC を bun のスクリプトでコンパイルすると、1 回目が compiler-sfc の 39.9ms に対して 4.5ms でした。
+
+### 方式
+- 版は `@vizejs/native` 0.781.0 です。プラットフォーム別の `.node` を静的なパスで `require` すると、`bun build --compile` がバイナリに埋め込みます。linux-x64 のバイナリは 109MB から 186MB になりました。
+- 替えたのは template のコンパイルだけです。parse と `compileScript` は compiler-sfc のままにしました。NAPI 版の `analyzeSfc` は bindings を返さず、bindings を返す WASM 版（`@vizejs/wasm`）は初期化に約 100ms かかるためです。
+- vize の `compile(template, { mode: 'function', prefixIdentifiers: true })` を使いました。compiler-sfc との違いは次の 3 点で、計測用のパッチで吸収しました（main には入れていません）。
+  - 出力の末尾に `return render` が無いので、足してから `new Function('Vue', ...)` に渡す。
+  - `bindingMetadata` を受け取らないので、識別子は `$setup.x` ではなく `_ctx.x` で参照される。ctx Proxy は `getOwnPropertyDescriptor` をすべてのキーに返すので、値は今と同じ順で解決された。
+  - 子コンポーネントは `$setup.StatusBadge` ではなく `resolveComponent('StatusBadge')` で引かれる。解決済みの import をコンポーネント定義の `components` にも入れた。
+- `compileTemplate` の AST の代わりに、vize の `ast.components`（template が使うコンポーネント名の一覧）からタグを集めました。vize の AST は要約だけで、ノードの木を持ちません。
+
+### 根拠
+- e2e の 8 つと StatusBadge を両方の方式で描き、`--json` の `html` / `deps` / `warnings` / `inputs` / `modules` が一致しました。
+- UserPage を両方の方式で交互に 10 回ずつ描きました（node:22 のコンテナ、warm）。中央値は次のとおりです。
+
+  | | compiler-sfc | vize |
+  | --- | --- | --- |
+  | parse | 25.6 ms | 29.5 ms |
+  | `compileScript` | 40.2 ms | 34.1 ms |
+  | 静的解析（Babel AST） | 14.1 ms | 13.7 ms |
+  | template のコンパイル | 24.7 ms | 1.8 ms |
+  | style | 7.4 ms | 7.5 ms |
+  | `compile.sfc`（`--timings`） | 112.1 ms | 89.9 ms |
+  | `total`（`--timings`） | 413.8 ms | 390.3 ms |
+  | vize の `.node` の読み込み | なし | 14.4 ms |
+  | wall | 439 ms（421〜455） | 434 ms（411〜465） |
+
+- `.node` の読み込みはモジュールの初期化で起きるので、`--timings` の `total` には入りません。wall の差は 5ms で、ばらつきの幅（約 40ms）より小さい値でした。
+- vize に替えられるのは template の工程だけなので、この短縮が上限です。描画を速くするなら、V6 の常駐モード（`serve`）を検討します。V6 の見積もりでは、1 回あたり 100ms 前後まで下がります。
 
 ---
 
