@@ -17,6 +17,14 @@ export interface ResolveOptions {
   placeholder: PlaceholderOptions;
   /** The project's messages for `useI18n()` names, or null (REPORT V13). */
   i18n: I18n | null;
+  /**
+   * The component being previewed: it takes the fixture and records `inputs`. Usually the root;
+   * a variant of an art file renders it as a child, and the props the variant passes win over
+   * the fixture as for any parent (REPORT V16).
+   */
+  previewed: { file: string; fixture: Record<string, unknown> };
+  /** Contents that replace files on disk: the in-memory SFC of an art variant (art.ts). */
+  sources?: Record<string, string>;
 }
 
 const BUILTIN_TAGS = new Set(['Transition', 'TransitionGroup', 'KeepAlive', 'Teleport', 'Suspense', 'component', 'slot', 'template']);
@@ -90,10 +98,11 @@ export class ComponentGraph {
     };
   }
 
-  /** Build a component definition. `root` marks the component being previewed and carries its fixture. */
-  async build(file: string, stack: string[] = [], root: { fixture: Record<string, unknown> } | null = null): Promise<any> {
-    const fixture = root?.fixture ?? null;
-    if (!root && this.defs.has(file)) return this.defs.get(file);
+  /** Build a component definition (the root, then its children recursively). */
+  async build(file: string, stack: string[] = []): Promise<any> {
+    const previewed = this.opts.previewed.file === file;
+    const fixture = previewed ? this.opts.previewed.fixture : null;
+    if (this.defs.has(file)) return this.defs.get(file);
     const rel = this.mods.rel(file);
     if (stack.includes(file)) return this.stub(path.basename(file, '.vue'), `circular import (${[...stack, file].map((f) => this.mods.rel(f)).join(' -> ')})`);
     if (stack.length >= this.opts.maxDepth) return this.stub(path.basename(file, '.vue'), `max depth ${this.opts.maxDepth} exceeded at ${rel}`);
@@ -101,7 +110,7 @@ export class ComponentGraph {
     let sfc = this.compiled.get(file);
     if (!sfc) {
       const t = performance.now();
-      sfc = compileSfc(this.mods, file);
+      sfc = compileSfc(this.mods, file, this.opts.sources?.[file]);
       this.time.sfcCompile += performance.now() - t;
       this.compiled.set(file, sfc);
       this.deps.add(rel);
@@ -137,13 +146,13 @@ export class ComponentGraph {
       components,
       setup() {
         const instance = graph.mods.vue.getCurrentInstance();
-        const inputs = root ? graph.rootInputs : undefined;
+        const inputs = previewed ? graph.rootInputs : undefined;
         return createCtxProxy({ sfc: sfc!, instance, imports, fixture, placeholder, inputs, i18n: graph.opts.i18n });
       },
       render: sfc.render,
     };
     for (const p of Object.values(def.props) as any[]) if (p.type.length === 0) p.type = null;
-    if (!root) this.defs.set(file, def);
+    this.defs.set(file, def);
     return def;
   }
 

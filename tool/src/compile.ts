@@ -55,10 +55,13 @@ export function scopeIdFor(rel: string) {
   return createHash('sha256').update(rel).digest('hex').slice(0, 8);
 }
 
-export function compileSfc(mods: ProjectModules, file: string): CompiledSfc {
+/**
+ * `source` replaces the file's contents: a variant of a Musea art file is an SFC that exists only
+ * in memory (art.ts). Imports still resolve from `file`'s directory.
+ */
+export function compileSfc(mods: ProjectModules, file: string, source = fs.readFileSync(file, 'utf8')): CompiledSfc {
   const { sfc } = mods;
   const rel = mods.rel(file);
-  const source = fs.readFileSync(file, 'utf8');
   const warnings: string[] = [];
   const { descriptor, errors } = sfc.parse(source, { filename: file });
   for (const e of errors) warnings.push(`${rel}: parse: ${(e as Error).message}`);

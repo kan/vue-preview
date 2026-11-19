@@ -1,12 +1,12 @@
 # AGENTS.md — vue-preview 開発ガイド
 
-Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングする CLI（`vue-preview`）です。pike のエディタの Preview が使っています。`--json` の `html` / `deps` / `warnings` / `modules` / `inputs` は pike が読む契約なので、形を変えるときは DESIGN.md と pike 側もそろえます。新しい方式を試すときは、何が動いて何が動かないかを REPORT.md に残します。
+Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングする CLI（`vue-preview`）です。pike のエディタの Preview が使っています。`--json` の `html` / `deps` / `warnings` / `modules` / `inputs` / `variants` は pike が読む契約なので、形を変えるときは DESIGN.md と pike 側もそろえます。新しい方式を試すときは、何が動いて何が動かないかを REPORT.md に残します。
 
 | ドキュメント | 内容 |
 | --- | --- |
 | [README.md](README.md) | 利用者向けの概要と使い方 |
 | [DESIGN.md](DESIGN.md) | 設計の前提、CLI と設定の仕様、処理の流れ |
-| [REPORT.md](REPORT.md) | 検証項目 V1〜V14 の結果、ハマりどころ、計測値、今後の提案 |
+| [REPORT.md](REPORT.md) | 検証項目 V1〜V16 の結果、ハマりどころ、計測値、今後の提案 |
 | [CHANGELOG.md](CHANGELOG.md) | 版ごとの変更点。`## [Unreleased]` がそのまま次のリリースノートになる |
 
 **設計や仕様を変えたら DESIGN.md を更新してください。検証で何かが分かったら REPORT.md に追記してください。**
@@ -36,6 +36,7 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 │   │   ├── ctx-proxy.ts            # テンプレートの値の解決
 │   │   ├── placeholder.ts          # プレースホルダ
 │   │   ├── i18n.ts                 # メッセージファイルの探索と読み込み、$t / useI18n() の t
+│   │   ├── art.ts                  # Musea の art ファイル（*.art.vue）の variant の読み込み
 │   │   ├── resolve-components.ts   # 子コンポーネントの再帰解決、スタブ
 │   │   ├── css.ts                  # Tailwind / global / scoped / url() のインライン化
 │   │   └── html.ts
@@ -45,7 +46,7 @@ Vue SFC を「CSS インライン済みの 1 枚 HTML」にレンダリングす
 └── fixture-app/              # 検証対象の Vue プロジェクト（PrimeVue v4 unstyled + pt + Tailwind v4）
     ├── vue-preview.config.json
     ├── compare.html / src/compare.ts   # Vite で同じ画面を表示する比較用エントリ
-    └── src/components/       # UserPage / UserTable / EditDialog / PageLayout / StatusBadge、edge/（エッジケース）
+    └── src/components/       # UserPage / UserTable / EditDialog / PageLayout / StatusBadge、UserTable.art.vue / StatusBadge.art.vue（Musea の art）、edge/（エッジケース）
 ```
 
 ## 開発コマンド

@@ -105,6 +105,57 @@ describe('inputs: what a fixture can give the root component (REPORT V12)', () =
   });
 });
 
+describe('variants of a Musea art file (REPORT V16)', () => {
+  type WithArt = Result & { inputs: any; variants?: { name: string; default: boolean }[] };
+  const plain = load('UserTable') as WithArt;
+  const withRows = load('art-UserTable-with-rows') as WithArt;
+  const empty = load('art-UserTable-empty') as WithArt;
+  const nope = load('art-UserTable-nope') as WithArt;
+  const variants = [
+    { name: 'With rows', default: true },
+    { name: 'Empty', default: false },
+  ];
+  test('the variants are listed with or without --variant', () => {
+    for (const r of [plain, withRows, empty, nope]) expect(r.variants).toEqual(variants);
+  });
+  test('a component without an art file has no variants', () => expect((load('EditDialog') as WithArt).variants).toBeUndefined());
+  test('the art file is a dep', () => {
+    for (const r of [plain, withRows, empty]) expect(r.deps).toContain('src/components/UserTable.art.vue');
+  });
+  test('the art script is not executed (its guard throws)', () => {
+    for (const r of [withRows, empty]) expect(r.warnings).toEqual([]);
+  });
+  test('a variant without the prop: the fixture fills it', () => {
+    for (const name of ['山田 太郎', '高橋 次郎']) expect(withRows.html).toContain(name);
+    expect(withRows.html).toContain('全 4 件');
+  });
+  test('a prop the variant passes wins over the fixture', () => {
+    expect(empty.html).toContain('ユーザーがいません');
+    expect(empty.html).toContain('全 0 件');
+    expect(empty.html).not.toContain('山田 太郎');
+  });
+  test("the variant's own markup, art literals and scoped style", () => {
+    expect(empty.html).toMatch(/<section class="art-frame" data-v-[0-9a-f]{8}><h2 data-v-[0-9a-f]{8}>ユーザー一覧（空）<\/h2>/);
+    expect(empty.html).toMatch(/\.art-frame\[data-v-[0-9a-f]{8}\]/);
+  });
+  test('inputs and the fixture stay those of the component', () => {
+    for (const r of [withRows, empty]) {
+      expect(r.inputs.props).toEqual(plain.inputs.props);
+      expect(r.inputs.fixture).toBe('src/components/UserTable.preview.json');
+    }
+  });
+  test("defineArt('X.vue') is relative to the art; the art's own `default as` import is kept", () => {
+    const badge = load('art-StatusBadge') as WithArt;
+    expect(badge.warnings).toEqual([]);
+    expect(badge.variants).toEqual([{ name: 'Suspended', default: true }]);
+    expect(badge.html).toContain('停止');
+  });
+  test('an unknown variant: a warning, and the component renders as without --variant', () => {
+    expect(nope.warnings).toEqual(['--variant Nope: not in src/components/UserTable.art.vue (With rows, Empty)']);
+    expect(nope.html).toBe(plain.html);
+  });
+});
+
 describe('globally registered components (app.component in src/main.ts)', () => {
   for (const name of ['GlobalRegistered', 'noconfig-GlobalRegistered']) {
     const r = load(name);
