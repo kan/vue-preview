@@ -33,6 +33,7 @@ V1〜V6 の検証日: 2026-09-25（V7 以降は各節に書きます）
 | V14 index.html で読み込むグローバル CSS | **成立** | `index.html` の `<link rel="stylesheet">` を、エントリの CSS より前に `globalCss` へ入れる。`/…` は `public/` の下 |
 | V15 SFC のコンパイルを vize に替える | **不採用** | template のコンパイルは 23ms 縮むが、vize の読み込みが 14ms かかり、wall では差が出ない。バイナリは約 77MB 増える |
 | V16 Musea の art ファイルの variant | **成立** | `<art>` を `<template>` に置き換えた SFC をメモリ上で作って描く。fixture は対象のコンポーネントに当て、variant が渡した props を優先する |
+| V17 props の TS の型を inputs に出す | **成立** | compiler-sfc の `resolveTypeElements` で `tsType` とリテラルの union の `options` を出す。vize の `analyzeSfc` は `defineModel` と import した型を返さず、不採用 |
 
 結論として、この方式は成立します。前提から外れた点は 2 つあります。
 
@@ -573,6 +574,58 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 
 ---
 
+## V17: props の TS の型を inputs に出す
+
+検証日: 2026-11-19（[#7](https://github.com/kan/vue-preview/issues/7)）
+
+**結果: 成立**（compiler-sfc の `resolveTypeElements` で型の宣言を読む。vize の `analyzeSfc` と比べて不採用にした）
+
+### きっかけ
+- `inputs.props[].types` は `compileScript` が作る runtime の型です。`'active' | 'invited' | 'suspended'` も `["String"]` になり、pike のフォームは自由入力の欄しか出せませんでした。
+- issue では vize の `analyzeSfc` を使う案でした。compiler-sfc にも、言語ツール向けに型の宣言を解決する `resolveTypeElements` があるので、両方を実装して比べました。
+
+### 方式
+- `<script setup lang="ts">` の `defineProps<T>()` と `defineModel<T>()` の型引数を `resolveTypeElements` に渡し、props ごとの型の AST を得ます（`prop-types.ts`）。`T` が別のファイルの interface でも、compiler-sfc がそのファイルを読んで解決します。script は実行しません。
+  - マクロの呼び出しは、`compileScript` が返す `scriptSetupAst` のトップレベルの文から探します。`defineProps` の型引数は `compileScript` が解決済みで、結果はノードにキャッシュされているので、解決し直しにはなりません。
+  - `tsType` は、型を書かれたとおりの文字列で出します。import した型の名前（`User[]`）は展開しません。
+  - 型がリテラルの union なら、要素を `options` に出します。型エイリアス（`type Tone = ...`）は、宣言したファイルのスコープから辿ります。SFC が `import type` しただけのエイリアスは、`{ [K in Tone]: ... }` という mapped type にして `resolveTypeElements` に渡し、展開されたキーを選択肢にします（文字列の union だけ）。
+  - `defineModel` の型は、1 つのプロパティを持つ型リテラルに包んで `resolveTypeElements` に渡し、ファイルのスコープで解決します。
+  - 型を解決するのは、描く対象のコンポーネント（`inputs` を出すもの）だけです。子のコンポーネントでは解決しません。
+  - 型を読むために開いたファイル（import した interface のファイル）は `deps` に入ります。
+  - メソッド記法の prop（`onSave(id: string): void`）には `tsType` を出しません。注釈が戻り値の型を指すためです。
+- 次の 2 つは対応していません。
+  - SFC が import した数値の union（`type Size = 1 | 2 | 3` を別のファイルに書いたもの）は、選択肢を出しません。import したエイリアスは mapped type で展開するので、文字列にしかならないためです。
+  - ジェネリックな interface に型引数を渡したとき（`defineProps<Wrapper<'x' | 'y'>>()`）は、`tsType` が型パラメータの名前（`T`）になります。選択肢は型引数のもの（`x`、`y`）が出ます。
+- 今の `types` と `default` の読み取りは変えません。`tsType` と `options` は、型で宣言した props にだけ足します。解決できない宣言（generic なコンポーネント、読めないパッケージの型）では足しません。
+- 比較に使った vize 版は、`@vizejs/native` 0.781.0 の `analyzeSfc` が返す型の文字列を使い、選択肢は Babel で型を読み直して出しました。比べたのは型を読む部分だけで、ほかのコードは同じです。
+
+### 根拠
+- fixture-app の 5 つのコンポーネントで、`inputs.props` を比べました。
+
+  | コンポーネント | compiler-sfc | vize |
+  | --- | --- | --- |
+  | StatusBadge（インラインの union） | `'active' \| 'invited' \| 'suspended'`、選択肢 3 つ | 同じ |
+  | UserTable / PlaceholderDemo | `User[]`、型リテラル | 同じ |
+  | EditDialog の `defineModel('visible')` | `boolean` | 返らない |
+  | TypedProps（import した interface） | 5 つとも返る。import 先とローカルのエイリアスも選択肢まで辿れる | 1 つも返らない |
+
+- linux-x64 のバイナリと、node:22 のコンテナでの wall（10 回ずつ交互、中央値）は次のとおりです。wall の差はばらつき（約 30ms）より小さい値でした。
+
+  | | 変更前 | compiler-sfc | vize |
+  | --- | --- | --- | --- |
+  | バイナリ | 109.2 MB | 109.2 MB | 186.5 MB |
+  | UserPage | 414 ms | 417 ms | 420 ms |
+  | TypedProps | 226 ms | 222 ms | 228 ms |
+
+- vize 版は、取れる範囲が compiler-sfc 版より狭く、`.node`（linux-x64 で 73.7MB）の埋め込みと版の固定が要ります。vize は Vue の版に左右されないのが利点ですが、vue-preview はもともと対象プロジェクトの compiler-sfc でコンパイルしているので、ここでは利点になりません。
+- `edge/TypedPropsPlain.vue` では、通常の `<script>` に書いた interface、メソッド記法の prop、import した union を指すエイリアスを確かめています。
+- e2e では、StatusBadge、EditDialog、`edge/TypedProps.vue` の `tsType` と `options` を確かめています。TypedProps は次の 3 つを持ちます。
+  - `edge/typed-props.ts` の interface
+  - ローカルのエイリアスを渡した `defineModel<Align>`
+  - SFC が import したエイリアスを渡した `defineModel<Tone>`
+
+---
+
 ## 既知の制約・提案（スコープ外のため記録のみ）
 
 - **script を実行しないことの限界**:
@@ -602,6 +655,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
   - `i18n.ts` / `compile.ts`（`i18nNames`）: V13
   - `detect-config.ts`（`htmlStylesheets`）/ `config.ts`（`resolveUrl`）: V14
   - `art.ts` / `resolve-components.ts`（`ResolveOptions.previewed` / `sources`）: V16
+  - `prop-types.ts`: V17
   - `compile.ts`: V2（静的解析と Vue ヘルパーのシム）
   - `ctx-proxy.ts` / `placeholder.ts`: V2
   - `resolve-components.ts`: V3
@@ -610,6 +664,7 @@ pike から呼ぶとき、node_modules がコンテナの中にしか無い構�
 - `fixture-app/src/components/`: 検証対象の画面
   - `edge/`: プレースホルダ、循環参照、未解決コンポーネント、グローバル登録、i18n の検証用
   - `UserTable.art.vue` / `StatusBadge.art.vue`: V16 の art ファイル
+  - `edge/TypedProps.vue` / `edge/TypedPropsPlain.vue` / `edge/typed-props.ts`: V17 の型で宣言した props
 - `fixture-app/src/locales/`: V13 のメッセージファイル（名前付き export の `ja.ts` と default export の `en.ts`）
 - `fixture-app/index.html` / `public/static/`: V14 の link と、その CSS
 - `fixture-app/src/compare.ts` / `compare.html`: V6 の比較用エントリ

@@ -92,12 +92,53 @@ describe('inputs: what a fixture can give the root component (REPORT V12)', () =
   test('props with declared types, and the other identifiers the template used (not local functions)', () => {
     const r = load('PlaceholderDemo') as Result & { inputs: any };
     expect(r.inputs.props).toEqual([
-      { name: 'order', types: ['Object'] },
-      { name: 'showNote', types: ['Boolean'] },
+      { name: 'order', types: ['Object'], tsType: '{ id: string; items: { name: string; price: number }[] }' },
+      { name: 'showNote', types: ['Boolean'], tsType: 'boolean' },
     ]);
     // `mode` is state (ref); `locale` came from a composable, so it is marked
     expect(r.inputs.values).toEqual([{ name: 'mode' }, { name: 'locale', origin: 'call' }]);
     expect(r.inputs.fixture).toBeNull();
+  });
+  test('TS types of the props, and the choices of a union of literals (REPORT V17)', () => {
+    const badge = load('art-StatusBadge') as Result & { inputs: any };
+    expect(badge.inputs.props).toEqual([
+      { name: 'status', types: ['String'], tsType: "'active' | 'invited' | 'suspended'", options: ['active', 'invited', 'suspended'], default: 'active' },
+      { name: 'compact', types: ['Boolean'], tsType: 'boolean', default: false },
+    ]);
+    const edit = load('EditDialog') as Result & { inputs: any };
+    expect(edit.inputs.props.map((p: any) => [p.name, p.tsType])).toEqual([
+      ['user', 'User | null'],
+      ['title', 'string'],
+      ['visible', 'boolean'], // defineModel
+    ]);
+  });
+  test('only the previewed component gets TS types', () => {
+    // UserTable renders StatusBadge; the child's props are not in inputs, and are not resolved
+    const r = load('UserTable') as Result & { inputs: any };
+    expect(r.inputs.props.map((p: any) => p.name)).toEqual(['rows', 'loading']);
+  });
+  test('an imported interface, aliases (local and imported) and defineModel<Union>', () => {
+    const r = load('TypedProps') as Result & { inputs: any };
+    expect(r.warnings).toEqual([]);
+    expect(r.inputs.props).toEqual([
+      { name: 'tone', types: ['String'], tsType: 'Tone', options: ['info', 'warn', 'error'] },
+      { name: 'size', types: ['Number'], tsType: '1 | 2 | 3', options: [1, 2, 3], default: 2 },
+      { name: 'label', types: ['String'], tsType: 'string' },
+      { name: 'tags', types: ['Array'], tsType: 'string[]' },
+      { name: 'align', types: ['String'], tsType: 'Align', options: ['start', 'end'] },
+      { name: 'level', types: ['String'], tsType: 'Tone', options: ['info', 'warn', 'error'] }, // imported by the SFC
+    ]);
+    expect(r.html).toMatch(/<p class="typed typed--/);
+    expect(r.deps).toContain('src/components/edge/typed-props.ts'); // the types were read from it
+  });
+  test('an interface in a plain <script>, a method, an alias of an imported union', () => {
+    const r = load('TypedPropsPlain') as Result & { inputs: any };
+    expect(r.warnings).toEqual([]);
+    expect(r.inputs.props).toEqual([
+      { name: 'level', types: ['String'], tsType: 'Level', options: ['info', 'warn', 'error'] },
+      { name: 'mode', types: ['String'], tsType: "'a' | 'b'", options: ['a', 'b'] },
+      { name: 'onSave', types: ['Function'] }, // no tsType: the signature's annotation is the return type
+    ]);
   });
   test('the fixture in use', () => {
     const r = load('UserTable') as Result & { inputs: any };

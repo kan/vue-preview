@@ -88,7 +88,8 @@ export class ComponentGraph {
     const withDefault = (value: unknown) => (value === UNKNOWN || value === undefined ? {} : { default: value });
     const settable = (name: string) => sfc?.bindings[name] !== 'setup-const' || name in (sfc?.literals ?? {});
     return {
-      props: Object.entries(sfc?.props ?? {}).map(([name, p]) => ({ name, types: p.types, ...withDefault(p.default) })),
+      // tsType / options are undefined (left out of the JSON) for props not declared by type
+      props: Object.entries(sfc?.props ?? {}).map(([name, p]) => ({ name, types: p.types, tsType: p.tsType, options: p.options, ...withDefault(p.default) })),
       // `origin: 'call'`: received from a composable (`const { t } = useI18n()`); callers may tuck these away
       values: [...this.rootInputs].filter(settable).map((name) => ({
         name,
@@ -110,10 +111,12 @@ export class ComponentGraph {
     let sfc = this.compiled.get(file);
     if (!sfc) {
       const t = performance.now();
-      sfc = compileSfc(this.mods, file, this.opts.sources?.[file]);
+      sfc = compileSfc(this.mods, file, this.opts.sources?.[file], { tsTypes: previewed });
       this.time.sfcCompile += performance.now() - t;
       this.compiled.set(file, sfc);
       this.deps.add(rel);
+      // an imported props type changes the output too; a library's types are not the project's files
+      for (const d of sfc.typeDeps) if (!d.split(/[\\/]/).includes('node_modules')) this.deps.add(this.mods.rel(d));
       sfc.warnings.forEach((w) => this.warn(w));
     }
     const nextStack = [...stack, file];

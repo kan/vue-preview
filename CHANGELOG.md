@@ -9,6 +9,7 @@
 ### Added
 
 - SFC の隣にある [Musea](https://github.com/ubugeeei-prod/vize) の art ファイル（`<Name>.art.vue`）を読むようにした。`--variant <name>` でその variant を描き、`--json` の `variants` に variant の一覧を出す。art ファイルの script は実行しない。fixture は variant で描くときもコンポーネントに当たり、variant が渡した props が優先される。
+- `--json` の `inputs.props` に、型で宣言した props（`defineProps<T>()`、`defineModel<T>()`）の TS の型を `tsType` として出すようにした。型がリテラルの union なら、要素を `options` に出す。別のファイルの interface と型エイリアスも辿る。
 
 ## [0.6.1] - 2026-11-10
 

@@ -48,7 +48,10 @@ vue-preview --version
     "modules": { "kind": "cache", "dir": "/root/.cache/vue-preview/deps/da28523b7762e04c" },
     "config": { "file": null, "detected": ["globalCss", "tailwind", "primevue"] },
     "inputs": {
-      "props": [{ "name": "rows", "types": ["Array"] }, { "name": "compact", "types": ["Boolean"], "default": false }],
+      "props": [
+        { "name": "rows", "types": ["Array"], "tsType": "User[]" },
+        { "name": "status", "types": ["String"], "tsType": "'active' | 'invited'", "options": ["active", "invited"], "default": "active" }
+      ],
       "values": [{ "name": "mode" }, { "name": "open", "default": false }, { "name": "t", "origin": "call" }],
       "fixture": "src/components/UserTable.preview.json"
     },
@@ -62,7 +65,9 @@ vue-preview --version
   - `deps`: 出力に影響したファイル（SFC、CSS、pt 定義、fixture、設定）のルート相対パス。`node_modules` の中のファイル（プロジェクトのものも依存キャッシュのものも）は含めない。
   - `modules`: ライブラリの出どころ。`{ "kind": "project" }` か `{ "kind": "cache", "dir": ... }`。
   - `inputs`: fixture でルートコンポーネントに与えられるもの（REPORT V12）。呼び出し側（pike）は、これを値の入力フォームの欄にする。
-    - `props`: 宣言された props。型と、静的に読めた既定値（`default`）。
+    - `props`: 宣言された props。runtime の型（`types`）と、静的に読めた既定値（`default`）。
+      - 型で宣言した props（`defineProps<T>()`、`defineModel<T>()`）には、TS の型を書かれたとおりの文字列で `tsType` に出す（REPORT V17）。import した型の名前（`User[]`）は展開しない。
+      - 型がリテラルの union なら、要素を `options` に出す（型エイリアスも辿る）。呼び出し側は select にできる。
     - `values`: props 以外にテンプレートが参照した識別子（import を除く）。描画中に記録するので、実際に使われた順に並ぶ。静的に読めた初期値（`ref(false)` など）があれば `default`。`<script setup>` で定義した関数（`setup-const` で静的な値でないもの）は JSON で与えられないので除く。関数呼び出しの戻り値から受け取った名前（`const { t } = useI18n()`、`const store = useStore()`。`ref` / `computed` などのリアクティビティの呼び出しは除く）には `origin: "call"` を付ける。composable の関数やストアが多く、呼び出し側は畳んで見せてよい。
     - `fixture`: 使った fixture（ルート相対。ルートの外なら `../` で始まる）。無ければ null。
   - `variants`: 描く SFC の隣にある Musea の art ファイル（`<Name>.art.vue`）の variant の一覧（後述。REPORT V16）。`default` は Musea が最初に見せる variant。art ファイルが無ければ欄ごと出さない。`--variant` の有無によらず出す。
@@ -153,6 +158,7 @@ cli.ts
 ### SFC のコンパイル（`compile.ts`）
 
 - `compileScript` は、bindingMetadata・import 情報・props 宣言を得るためだけに使います。**生成コードは実行しません。** props の `type` と、リテラルの `default` は Babel AST から静的に読み取ります。
+- 型で宣言した props の TS の型は、compiler-sfc の `resolveTypeElements` で `defineProps` / `defineModel` の型引数から読みます（`prop-types.ts`、REPORT V17）。別のファイルの interface も、compiler-sfc がそのファイルを読んで解決します。解決できない宣言では `tsType` を出さず、runtime の型だけにします。
 - `compileTemplate` は非 inline・`mode: 'function'` でコンパイルし、`new Function('Vue', code)` で render 関数を得ます。
 - bindingMetadata の `props` / `props-aliased` / `data` / `options` は `setup-maybe-ref` に書き換えます。こうすると、テンプレートからの参照がすべて `$setup.x` 経由になり、ctx Proxy が値を決められます。
 - render 関数に渡す `Vue` は、次の 2 点を補正したシムです。

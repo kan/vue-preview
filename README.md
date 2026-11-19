@@ -56,7 +56,7 @@ vue-preview render src/components/UserPage.vue --root /app --json --out UserPage
 | `--root <dir>` | プロジェクトルート（`package.json` と `vue-preview.config.json` がある場所）。省略時はカレントディレクトリ |
 | `--fixture <file>` | fixture の JSON。省略時は `<name>.preview.json` を探し、なければプレースホルダだけで描画する |
 | `--variant <name>` | 隣の `<name>.art.vue`（Musea の art ファイル）の variant を名前で選んで描く。省略時はコンポーネントだけを描く |
-| `--json` | `{ html, deps, warnings, modules, inputs, variants, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧、`variants` は art ファイルの variant の一覧（art ファイルがあるときだけ） |
+| `--json` | `{ html, deps, warnings, modules, inputs, variants, ... }` を出力する。`deps` は出力に影響したファイルのルート相対パス、`modules` はライブラリの出どころ、`inputs` は fixture で与えられる props と値の一覧（型で宣言した props には TS の型と、リテラルの union なら選択肢も付く）、`variants` は art ファイルの variant の一覧（art ファイルがあるときだけ） |
 | `--out <file>` | stdout の代わりにファイルへ書き出す |
 | `--portal teleport\|inline\|off` | PrimeVue の Dialog などの描画方法（既定 `teleport`） |
 | `--locale <locale>` | i18n のメッセージに使うロケール（既定 `ja`） |

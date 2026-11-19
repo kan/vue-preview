@@ -14,7 +14,9 @@ for c in \
   src/components/edge/CircularA.vue \
   src/components/edge/Unresolved.vue \
   src/components/edge/GlobalRegistered.vue \
-  src/components/edge/I18nDemo.vue
+  src/components/edge/I18nDemo.vue \
+  src/components/edge/TypedProps.vue \
+  src/components/edge/TypedPropsPlain.vue
 do
   name=$(basename "$c" .vue)
   docker compose exec -T app "$BIN" render "$c" --root /app --json --out "/out/$name.json"
